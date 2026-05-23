@@ -1,0 +1,25 @@
+geometry_msgs/PoseStamped target_pose
+float64 target_yaw
+bool allow_holonomic
+float64 max_forward_speed
+float64 max_vertical_speed
+float64 max_yaw_rate
+float64 position_tolerance
+float64 yaw_tolerance
+float64 slowdown_distance
+float64 timeout
+---
+bool success
+string message
+---
+float64 current_x
+float64 current_y
+float64 current_z
+float64 current_yaw
+float64 distance_to_goal
+float64 yaw_error
+float64 commanded_forward_speed
+float64 commanded_lateral_speed
+float64 commanded_vertical_speed
+float64 commanded_yaw_rate
+string state

@@ -1,0 +1,12 @@
+path_manager_lifecycle_node:
+  ros__parameters:
+    frame_id: world_ned
+    default_max_vertical_speed: 0.3
+    navigator_timeout: 2.0
+    mode_request_timeout: 5.0
+    control_loop_rate: 15.0
+    gains:
+      x: 0.4
+      y: 0.4
+      z: 1.0
+      yaw: 1.0

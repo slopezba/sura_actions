@@ -1,0 +1,13 @@
+float64 target_depth
+float64 depth_tolerance
+float64 timeout
+float64 surface_force_z
+---
+bool success
+string message
+float64 final_depth
+---
+float64 current_depth
+float64 depth_error
+float64 time_remaining
+string state

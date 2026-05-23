@@ -1,0 +1,20 @@
+nav_msgs/Path path
+bool use_saved_path
+string path_file
+bool holonomic
+float64 goal_tolerance
+float64 yaw_tolerance
+float64 max_forward_speed
+float64 max_yaw_rate
+float64 timeout
+---
+bool success
+string message
+---
+float64 current_x
+float64 current_y
+float64 current_z
+float64 current_yaw
+int32 current_waypoint_index
+float64 distance_to_target
+float64 progress

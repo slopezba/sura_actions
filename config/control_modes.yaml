@@ -1,0 +1,60 @@
+sura_control_manager_node:
+  ros__parameters:
+    robot_namespace: sura
+    controller_manager: /sura/controller/controller_manager
+    switch_service_name: switch_controller
+    switch_timeout: 5.0
+    strictness: 1
+
+    modes.manual.activate:
+      - body_force
+      - depth_hold
+
+    modes.follow_path.activate:
+      - body_force
+      - body_velocity
+      - depth_hold
+    modes.follow_path.deactivate:
+      - position_hold
+      - stabilize
+      - mpc_4dof
+      - thruster_test_controller
+
+    modes.surface.activate:
+      - body_force
+      - depth_hold
+    modes.surface.deactivate:
+      - position_hold
+      - body_velocity
+      - stabilize
+      - mpc_4dof
+      - thruster_test_controller
+
+    modes.hold_position.activate:
+      - body_force
+      - depth_hold
+      - body_velocity
+      - position_hold
+    modes.hold_position.deactivate:
+      - stabilize
+      - mpc_4dof
+      - thruster_test_controller
+
+    modes.body_velocity.activate:
+      - body_force
+      - body_velocity
+      - depth_hold
+    modes.body_velocity.deactivate:
+      - position_hold
+      - stabilize
+      - mpc_4dof
+      - thruster_test_controller
+
+    modes.emergency_stop.deactivate:
+      - body_force
+      - position_hold
+      - body_velocity
+      - stabilize
+      - depth_hold
+      - mpc_4dof
+      - thruster_test_controller

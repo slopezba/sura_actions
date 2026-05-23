@@ -1,0 +1,7 @@
+go_to_pose_non_holonomic_action_node:
+  ros__parameters:
+    gains:
+      x: 0.4
+      y: 0.4
+      z: 1.0
+      yaw: 1.0
