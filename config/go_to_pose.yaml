@@ -1,0 +1,17 @@
+go_to_pose_lifecycle_action_node:
+  ros__parameters:
+    frame_id: world_ned
+    defaults:
+      holonomic: false
+      max_forward_speed: 0.3
+      max_vertical_speed: 0.3
+      max_yaw_rate: 0.5
+      position_tolerance: 0.2
+      yaw_tolerance: 0.2
+      slowdown_distance: 0.5
+      timeout: 60.0
+    gains:
+      x: 0.4
+      y: 0.4
+      z: 1.0
+      yaw: 1.0

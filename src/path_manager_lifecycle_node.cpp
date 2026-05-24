@@ -652,6 +652,12 @@ void FollowPathExecutor::configure(
   const std::string & depth_setpoint_topic,
   const std::string & set_control_mode_service,
   double default_max_vertical_speed,
+  bool default_holonomic,
+  double default_goal_tolerance,
+  double default_yaw_tolerance,
+  double default_max_forward_speed,
+  double default_max_yaw_rate,
+  double default_timeout,
   double navigator_timeout,
   double mode_request_timeout,
   double control_loop_rate,
@@ -662,6 +668,12 @@ void FollowPathExecutor::configure(
 {
   node_ = node;
   default_max_vertical_speed_ = sanitizePositive(default_max_vertical_speed, 0.3);
+  default_holonomic_ = default_holonomic;
+  default_goal_tolerance_ = sanitizePositive(default_goal_tolerance, 0.2);
+  default_yaw_tolerance_ = sanitizePositive(default_yaw_tolerance, 0.1);
+  default_max_forward_speed_ = sanitizePositive(default_max_forward_speed, 0.2);
+  default_max_yaw_rate_ = sanitizePositive(default_max_yaw_rate, 0.3);
+  default_timeout_ = sanitizePositive(default_timeout, 60.0);
   navigator_timeout_ = sanitizePositive(navigator_timeout, 2.0);
   mode_request_timeout_ = sanitizePositive(mode_request_timeout, 5.0);
   control_loop_rate_ = sanitizePositive(control_loop_rate, 15.0);
@@ -818,11 +830,13 @@ void FollowPathExecutor::execute(
     }
   }
 
-  const double goal_tolerance = sanitizePositive(goal->goal_tolerance, 0.2);
-  const double yaw_tolerance = sanitizePositive(goal->yaw_tolerance, 0.1);
-  const double max_forward_speed = sanitizePositive(goal->max_forward_speed, 0.2);
-  const double max_yaw_rate = sanitizePositive(goal->max_yaw_rate, 0.3);
-  const double timeout = sanitizePositive(goal->timeout, 60.0);
+  const double goal_tolerance = sanitizePositive(goal->goal_tolerance, default_goal_tolerance_);
+  const double yaw_tolerance = sanitizePositive(goal->yaw_tolerance, default_yaw_tolerance_);
+  const double max_forward_speed =
+    sanitizePositive(goal->max_forward_speed, default_max_forward_speed_);
+  const double max_yaw_rate = sanitizePositive(goal->max_yaw_rate, default_max_yaw_rate_);
+  const double timeout = sanitizePositive(goal->timeout, default_timeout_);
+  const bool holonomic = goal->holonomic || default_holonomic_;
   const rclcpp::Duration timeout_duration = rclcpp::Duration::from_seconds(timeout);
   const rclcpp::Duration navigator_timeout_duration =
     rclcpp::Duration::from_seconds(navigator_timeout_);
@@ -877,7 +891,7 @@ void FollowPathExecutor::execute(
     const double error_z = target.z - current_position.z;
     const double distance_to_target = std::hypot(std::hypot(error_x, error_y), error_z);
     const double current_yaw = quaternionToYaw(navigator_msg.position.orientation);
-    const double desired_yaw = goal->holonomic ? target.yaw : std::atan2(error_y, error_x);
+    const double desired_yaw = holonomic ? target.yaw : std::atan2(error_y, error_x);
     const double yaw_error = normalizeAngle(desired_yaw - current_yaw);
 
     if (distance_to_target <= goal_tolerance && std::abs(yaw_error) <= yaw_tolerance) {
@@ -894,7 +908,7 @@ void FollowPathExecutor::execute(
     double forward_speed = 0.0;
     double lateral_speed = 0.0;
 
-    if (goal->holonomic) {
+    if (holonomic) {
       const double cos_yaw = std::cos(current_yaw);
       const double sin_yaw = std::sin(current_yaw);
       const double body_error_x = cos_yaw * error_x + sin_yaw * error_y;
@@ -1058,6 +1072,13 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
 
   const double default_max_vertical_speed =
     getOrDeclareParameter<double>(*this, "default_max_vertical_speed", 0.3);
+  default_holonomic_ = getOrDeclareParameter<bool>(*this, "defaults.holonomic", false);
+  default_goal_tolerance_ = getOrDeclareParameter<double>(*this, "defaults.goal_tolerance", 0.2);
+  default_yaw_tolerance_ = getOrDeclareParameter<double>(*this, "defaults.yaw_tolerance", 0.1);
+  default_max_forward_speed_ =
+    getOrDeclareParameter<double>(*this, "defaults.max_forward_speed", 0.2);
+  default_max_yaw_rate_ = getOrDeclareParameter<double>(*this, "defaults.max_yaw_rate", 0.3);
+  default_timeout_ = getOrDeclareParameter<double>(*this, "defaults.timeout", 60.0);
   const double navigator_timeout = getOrDeclareParameter<double>(*this, "navigator_timeout", 2.0);
   const double mode_request_timeout =
     getOrDeclareParameter<double>(*this, "mode_request_timeout", 5.0);
@@ -1081,6 +1102,12 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
     depth_setpoint_topic_,
     set_control_mode_service_,
     default_max_vertical_speed,
+    default_holonomic_,
+    default_goal_tolerance_,
+    default_yaw_tolerance_,
+    default_max_forward_speed_,
+    default_max_yaw_rate_,
+    default_timeout_,
     navigator_timeout,
     mode_request_timeout,
     control_loop_rate,
@@ -1211,6 +1238,20 @@ void PathManagerLifecycleNode::cleanupResources()
   editor_.cleanup();
 }
 
+PathManagerLifecycleNode::FollowPath::Goal PathManagerLifecycleNode::resolveGoalDefaults(
+  const FollowPath::Goal & goal) const
+{
+  auto resolved_goal = goal;
+  resolved_goal.holonomic = goal.holonomic || default_holonomic_;
+  resolved_goal.goal_tolerance = sanitizePositive(goal.goal_tolerance, default_goal_tolerance_);
+  resolved_goal.yaw_tolerance = sanitizePositive(goal.yaw_tolerance, default_yaw_tolerance_);
+  resolved_goal.max_forward_speed =
+    sanitizePositive(goal.max_forward_speed, default_max_forward_speed_);
+  resolved_goal.max_yaw_rate = sanitizePositive(goal.max_yaw_rate, default_max_yaw_rate_);
+  resolved_goal.timeout = sanitizePositive(goal.timeout, default_timeout_);
+  return resolved_goal;
+}
+
 rclcpp_action::GoalResponse PathManagerLifecycleNode::handleGoal(
   const rclcpp_action::GoalUUID &,
   std::shared_ptr<const FollowPath::Goal> goal)
@@ -1223,12 +1264,13 @@ rclcpp_action::GoalResponse PathManagerLifecycleNode::handleGoal(
     RCLCPP_WARN(get_logger(), "Rejecting FollowPath goal because another goal is executing");
     return rclcpp_action::GoalResponse::REJECT;
   }
+  const auto resolved_goal = resolveGoalDefaults(*goal);
   if (
-    goal->goal_tolerance <= 0.0 ||
-    goal->yaw_tolerance <= 0.0 ||
-    goal->max_forward_speed <= 0.0 ||
-    goal->max_yaw_rate <= 0.0 ||
-    goal->timeout <= 0.0)
+    resolved_goal.goal_tolerance <= 0.0 ||
+    resolved_goal.yaw_tolerance <= 0.0 ||
+    resolved_goal.max_forward_speed <= 0.0 ||
+    resolved_goal.max_yaw_rate <= 0.0 ||
+    resolved_goal.timeout <= 0.0)
   {
     RCLCPP_WARN(get_logger(), "Rejecting FollowPath goal because limits and tolerances must be positive");
     return rclcpp_action::GoalResponse::REJECT;

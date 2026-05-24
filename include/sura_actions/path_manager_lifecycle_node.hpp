@@ -102,6 +102,12 @@ public:
     const std::string & depth_setpoint_topic,
     const std::string & set_control_mode_service,
     double default_max_vertical_speed,
+    bool default_holonomic,
+    double default_goal_tolerance,
+    double default_yaw_tolerance,
+    double default_max_forward_speed,
+    double default_max_yaw_rate,
+    double default_timeout,
     double navigator_timeout,
     double mode_request_timeout,
     double control_loop_rate,
@@ -151,6 +157,12 @@ private:
   std::atomic_bool stop_requested_{false};
 
   double default_max_vertical_speed_{0.3};
+  bool default_holonomic_{false};
+  double default_goal_tolerance_{0.2};
+  double default_yaw_tolerance_{0.1};
+  double default_max_forward_speed_{0.2};
+  double default_max_yaw_rate_{0.3};
+  double default_timeout_{60.0};
   double navigator_timeout_{2.0};
   double mode_request_timeout_{5.0};
   double control_loop_rate_{15.0};
@@ -206,6 +218,7 @@ private:
   void handleLoadPath(
     const std::shared_ptr<srv::PathFile::Request> request,
     std::shared_ptr<srv::PathFile::Response> response);
+  FollowPath::Goal resolveGoalDefaults(const FollowPath::Goal & goal) const;
 
   std::string robot_namespace_;
   std::string frame_id_;
@@ -217,6 +230,12 @@ private:
   std::string body_velocity_command_topic_;
   std::string depth_setpoint_topic_;
   std::string set_control_mode_service_;
+  bool default_holonomic_{false};
+  double default_goal_tolerance_{0.2};
+  double default_yaw_tolerance_{0.1};
+  double default_max_forward_speed_{0.2};
+  double default_max_yaw_rate_{0.3};
+  double default_timeout_{60.0};
 
   PathEditor editor_;
   FollowPathExecutor executor_;

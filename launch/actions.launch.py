@@ -15,10 +15,10 @@ def generate_launch_description():
         "config",
         "control_modes.yaml",
     )
-    default_go_to_pose_non_holonomic_config_file = os.path.join(
+    default_go_to_pose_config_file = os.path.join(
         package_share,
         "config",
-        "go_to_pose_non_holonomic.yaml",
+        "go_to_pose.yaml",
     )
     default_path_manager_config_file = os.path.join(
         package_share,
@@ -28,9 +28,7 @@ def generate_launch_description():
 
     robot_namespace = LaunchConfiguration("robot_namespace")
     control_modes_file = LaunchConfiguration("control_modes_file")
-    go_to_pose_non_holonomic_config_file = LaunchConfiguration(
-        "go_to_pose_non_holonomic_config_file"
-    )
+    go_to_pose_config_file = LaunchConfiguration("go_to_pose_config_file")
     path_manager_config_file = LaunchConfiguration("path_manager_config_file")
     default_depth_tolerance = LaunchConfiguration("default_depth_tolerance")
     default_timeout = LaunchConfiguration("default_timeout")
@@ -45,8 +43,8 @@ def generate_launch_description():
         ["'", namespace_prefix, "' + '/controller/controller_manager'"]
     )
     surface_action_name = PythonExpression(["'", namespace_prefix, "' + '/actions/surface'"])
-    go_to_pose_non_holonomic_action_name = PythonExpression(
-        ["'", namespace_prefix, "' + '/actions/go_to_pose_non_holonomic'"]
+    go_to_pose_action_name = PythonExpression(
+        ["'", namespace_prefix, "' + '/actions/go_to_pose'"]
     )
     follow_path_action_name = PythonExpression(
         ["'", namespace_prefix, "' + '/actions/follow_path'"]
@@ -61,8 +59,11 @@ def generate_launch_description():
     depth_setpoint_topic = PythonExpression(
         ["'", namespace_prefix, "' + '/controller/depth_hold/set_point'"]
     )
-    target_pose_topic = PythonExpression(
-        ["'", namespace_prefix, "' + '/actions/go_to_pose_non_holonomic/target_pose'"]
+    go_to_pose_target_pose_topic = PythonExpression(
+        ["'", namespace_prefix, "' + '/actions/go_to_pose/target_pose'"]
+    )
+    go_to_pose_interactive_marker_namespace = PythonExpression(
+        ["'", namespace_prefix, "' + '/actions/go_to_pose/interactive_marker'"]
     )
     path_manager_path_topic = PythonExpression(
         ["'", namespace_prefix, "' + '/path_manager/path'"]
@@ -85,8 +86,8 @@ def generate_launch_description():
                 default_value=default_control_modes_file,
             ),
             DeclareLaunchArgument(
-                "go_to_pose_non_holonomic_config_file",
-                default_value=default_go_to_pose_non_holonomic_config_file,
+                "go_to_pose_config_file",
+                default_value=default_go_to_pose_config_file,
             ),
             DeclareLaunchArgument(
                 "path_manager_config_file",
@@ -147,20 +148,22 @@ def generate_launch_description():
                     }
                 ],
             ),
-            Node(
+            LifecycleNode(
                 package="sura_actions",
-                executable="go_to_pose_non_holonomic_action_node",
-                name="go_to_pose_non_holonomic_action_node",
+                executable="go_to_pose_lifecycle_action_node",
+                name="go_to_pose_lifecycle_action_node",
+                namespace="",
                 output="screen",
                 parameters=[
-                    go_to_pose_non_holonomic_config_file,
+                    go_to_pose_config_file,
                     {
                         "robot_namespace": robot_namespace,
-                        "action_name": go_to_pose_non_holonomic_action_name,
+                        "action_name": go_to_pose_action_name,
                         "navigator_topic": navigator_topic,
                         "body_velocity_command_topic": body_velocity_command_topic,
                         "depth_setpoint_topic": depth_setpoint_topic,
-                        "target_pose_topic": target_pose_topic,
+                        "target_pose_topic": go_to_pose_target_pose_topic,
+                        "interactive_marker_namespace": go_to_pose_interactive_marker_namespace,
                         "set_control_mode_service": set_control_mode_service,
                         "default_depth_tolerance": ParameterValue(
                             default_depth_tolerance,
@@ -182,7 +185,7 @@ def generate_launch_description():
                             misalignment_slowdown_yaw,
                             value_type=float,
                         ),
-                    }
+                    },
                 ],
             ),
             LifecycleNode(

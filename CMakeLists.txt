@@ -23,7 +23,7 @@ pkg_check_modules(TINYXML2 REQUIRED IMPORTED_TARGET tinyxml2)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Surface.action"
-  "action/GoToPoseNonHolonomic.action"
+  "action/GoToPose.action"
   "action/FollowPath.action"
   "srv/AddWaypoint.srv"
   "srv/PathFile.srv"
@@ -64,20 +64,24 @@ target_link_libraries(sura_control_manager_node
   "${cpp_typesupport_target}"
 )
 
-add_executable(go_to_pose_non_holonomic_action_node
-  src/go_to_pose_non_holonomic_action_server.cpp
+add_executable(go_to_pose_lifecycle_action_node
+  src/go_to_pose_lifecycle_action_server.cpp
 )
-target_include_directories(go_to_pose_non_holonomic_action_node
+target_include_directories(go_to_pose_lifecycle_action_node
   PRIVATE
     include
 )
-ament_target_dependencies(go_to_pose_non_holonomic_action_node
+ament_target_dependencies(go_to_pose_lifecycle_action_node
   geometry_msgs
+  interactive_markers
+  lifecycle_msgs
   rclcpp
   rclcpp_action
+  rclcpp_lifecycle
   sura_msgs
+  visualization_msgs
 )
-target_link_libraries(go_to_pose_non_holonomic_action_node
+target_link_libraries(go_to_pose_lifecycle_action_node
   "${cpp_typesupport_target}"
 )
 
@@ -107,7 +111,7 @@ target_link_libraries(path_manager_lifecycle_node
 
 install(
   TARGETS
-    go_to_pose_non_holonomic_action_node
+    go_to_pose_lifecycle_action_node
     path_manager_lifecycle_node
     surface_action_node
     sura_control_manager_node
