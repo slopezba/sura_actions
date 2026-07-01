@@ -101,6 +101,17 @@ T getOrDeclareParameter(
 
   return node.declare_parameter<T>(name, default_value);
 }
+
+template<typename T>
+T getOrDeclareParameterWithFallback(
+  rclcpp_lifecycle::LifecycleNode & node,
+  const std::string & name,
+  const std::string & fallback_name,
+  const T & default_value)
+{
+  const T fallback_value = getOrDeclareParameter<T>(node, fallback_name, default_value);
+  return getOrDeclareParameter<T>(node, name, fallback_value);
+}
 }  // namespace
 
 void PathEditor::configure(
@@ -661,6 +672,7 @@ void FollowPathExecutor::configure(
   double navigator_timeout,
   double mode_request_timeout,
   double control_loop_rate,
+  bool hold_after_reaching,
   double gain_x,
   double gain_y,
   double gain_z,
@@ -677,6 +689,7 @@ void FollowPathExecutor::configure(
   navigator_timeout_ = sanitizePositive(navigator_timeout, 2.0);
   mode_request_timeout_ = sanitizePositive(mode_request_timeout, 5.0);
   control_loop_rate_ = sanitizePositive(control_loop_rate, 15.0);
+  hold_after_reaching_ = hold_after_reaching;
   gain_x_ = gain_x;
   gain_y_ = gain_y;
   gain_z_ = gain_z;
@@ -855,18 +868,16 @@ void FollowPathExecutor::execute(
   rclcpp::Rate loop_rate(control_loop_rate_);
   std::size_t current_waypoint_index = 0;
   while (rclcpp::ok() && current_waypoint_index < waypoints.size()) {
-    if (goal_handle->is_canceling()) {
+    if (goal_handle->is_canceling() || stop_requested_.load()) {
       publishZeroVelocity();
       result->success = false;
-      result->message = "FollowPath goal canceled";
-      goal_handle->canceled(result);
-      return;
-    }
-    if (stop_requested_.load()) {
-      publishZeroVelocity();
-      result->success = false;
-      result->message = "FollowPath execution stopped";
-      goal_handle->abort(result);
+      result->message = "FollowPath canceled before completing all waypoints";
+      RCLCPP_INFO(node_->get_logger(), "FollowPath stopped before completing all waypoints");
+      if (goal_handle->is_canceling()) {
+        goal_handle->canceled(result);
+      } else {
+        goal_handle->abort(result);
+      }
       return;
     }
 
@@ -891,10 +902,20 @@ void FollowPathExecutor::execute(
     const double error_z = target.z - current_position.z;
     const double distance_to_target = std::hypot(std::hypot(error_x, error_y), error_z);
     const double current_yaw = quaternionToYaw(navigator_msg.position.orientation);
-    const double desired_yaw = holonomic ? target.yaw : std::atan2(error_y, error_x);
+    const bool final_waypoint = current_waypoint_index + 1U == waypoints.size();
+    const bool use_holonomic_control = holonomic;
+    const double desired_yaw =
+      use_holonomic_control ? target.yaw : std::atan2(error_y, error_x);
     const double yaw_error = normalizeAngle(desired_yaw - current_yaw);
 
-    if (distance_to_target <= goal_tolerance && std::abs(yaw_error) <= yaw_tolerance) {
+    const bool waypoint_reached =
+      distance_to_target <= goal_tolerance && std::abs(yaw_error) <= yaw_tolerance;
+    if (waypoint_reached) {
+      RCLCPP_INFO(
+        node_->get_logger(),
+        "FollowPath waypoint %zu/%zu reached",
+        current_waypoint_index + 1U,
+        waypoints.size());
       ++current_waypoint_index;
       publishZeroVelocity();
       continue;
@@ -908,7 +929,7 @@ void FollowPathExecutor::execute(
     double forward_speed = 0.0;
     double lateral_speed = 0.0;
 
-    if (holonomic) {
+    if (use_holonomic_control) {
       const double cos_yaw = std::cos(current_yaw);
       const double sin_yaw = std::sin(current_yaw);
       const double body_error_x = cos_yaw * error_x + sin_yaw * error_y;
@@ -930,16 +951,25 @@ void FollowPathExecutor::execute(
     feedback->current_yaw = current_yaw;
     feedback->current_waypoint_index = static_cast<int32_t>(current_waypoint_index);
     feedback->distance_to_target = distance_to_target;
-    feedback->progress = static_cast<double>(current_waypoint_index) /
-      static_cast<double>(waypoints.size());
+    feedback->progress =
+      static_cast<double>(current_waypoint_index) / static_cast<double>(waypoints.size());
+    feedback->state = final_waypoint ? "moving_to_final_waypoint" : "moving_to_waypoint";
     goal_handle->publish_feedback(feedback);
 
     loop_rate.sleep();
   }
 
   publishZeroVelocity();
+  if (!rclcpp::ok()) {
+    result->success = false;
+    result->message = "ROS shutdown before FollowPath completed all waypoints";
+    goal_handle->abort(result);
+    return;
+  }
+
   result->success = true;
-  result->message = "FollowPath target reached";
+  result->message = "FollowPath completed all waypoints";
+  RCLCPP_INFO(node_->get_logger(), "FollowPath completed all waypoints successfully");
   goal_handle->succeed(result);
 }
 
@@ -1070,9 +1100,12 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
     *this,
     "set_control_mode_service", namespacedTopic("control_manager/set_mode"));
 
-  const double default_max_vertical_speed =
-    getOrDeclareParameter<double>(*this, "default_max_vertical_speed", 0.3);
   default_holonomic_ = getOrDeclareParameter<bool>(*this, "defaults.holonomic", false);
+  const double default_max_vertical_speed = getOrDeclareParameterWithFallback<double>(
+    *this,
+    "defaults.max_vertical_speed",
+    "default_max_vertical_speed",
+    0.3);
   default_goal_tolerance_ = getOrDeclareParameter<double>(*this, "defaults.goal_tolerance", 0.2);
   default_yaw_tolerance_ = getOrDeclareParameter<double>(*this, "defaults.yaw_tolerance", 0.1);
   default_max_forward_speed_ =
@@ -1083,6 +1116,8 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
   const double mode_request_timeout =
     getOrDeclareParameter<double>(*this, "mode_request_timeout", 5.0);
   const double control_loop_rate = getOrDeclareParameter<double>(*this, "control_loop_rate", 15.0);
+  const bool hold_after_reaching =
+    getOrDeclareParameter<bool>(*this, "hold_after_reaching", false);
   const double gain_x = getOrDeclareParameter<double>(*this, "gains.x", 0.4);
   const double gain_y = getOrDeclareParameter<double>(*this, "gains.y", 0.4);
   const double gain_z = getOrDeclareParameter<double>(*this, "gains.z", 1.0);
@@ -1111,6 +1146,7 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
     navigator_timeout,
     mode_request_timeout,
     control_loop_rate,
+    hold_after_reaching,
     gain_x,
     gain_y,
     gain_z,

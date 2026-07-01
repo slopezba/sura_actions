@@ -146,7 +146,7 @@ void SuraControlManager::loadModeConfigs()
     SetControlMode::Request::MANUAL,
     "manual",
     {"body_force", "depth_hold"},
-    {});
+    {"body_velocity", "position_hold", "stabilize", "mpc_4dof", "thruster_test_controller"});
   load_mode(
     SetControlMode::Request::FOLLOW_PATH,
     "follow_path",

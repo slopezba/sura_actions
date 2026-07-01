@@ -111,6 +111,7 @@ public:
     double navigator_timeout,
     double mode_request_timeout,
     double control_loop_rate,
+    bool hold_after_reaching,
     double gain_x,
     double gain_y,
     double gain_z,
@@ -166,6 +167,7 @@ private:
   double navigator_timeout_{2.0};
   double mode_request_timeout_{5.0};
   double control_loop_rate_{15.0};
+  bool hold_after_reaching_{true};
   double gain_x_{0.4};
   double gain_y_{0.4};
   double gain_z_{1.0};

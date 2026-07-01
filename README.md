@@ -236,7 +236,16 @@ ros2 action send_goal /cirtesub/actions/go_to_pose sura_actions/action/GoToPose 
 
 Con `holonomic: true` el robot puede usar velocidad lateral. Con `holonomic: false` se comporta como no holonomico.
 
-Al terminar por exito, cancelacion o fallo, este nodo vuelve automaticamente a `inactive`.
+Con `hold_after_reaching: true` (valor por defecto en `config/go_to_pose.yaml`), al entrar
+en tolerancia la accion publica el estado `holding_target` y mantiene activo el mismo lazo
+de correccion de `GoToPose`. No activa `position_hold`. La accion termina y el nodo vuelve
+a `inactive` cuando se cancela o se desactiva. Si se cancela despues de haber alcanzado la
+pose, el resultado conserva `success: true` y comunica que la pose se mantuvo correctamente
+hasta la cancelacion. Una cancelacion anterior a alcanzar la pose devuelve `success: false`.
+
+Si quieres el comportamiento anterior, configura `hold_after_reaching: false`: la accion
+termina con exito al entrar en tolerancia, publica velocidad cero y vuelve automaticamente
+a `inactive`.
 
 ### GoToPose con pose explicita
 
@@ -286,6 +295,16 @@ Para sobrescribir solo un campo:
 ```bash
 ros2 action send_goal /cirtesub/actions/follow_path sura_actions/action/FollowPath "{use_saved_path: true, path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml', holonomic: true}" --feedback
 ```
+
+Con `hold_after_reaching: true` en `config/path_manager.yaml`, al completar el ultimo
+waypoint la accion mantiene esa pose usando el mismo control de `FollowPath`, sin activar
+`position_hold`. El feedback permanece con `progress: 1.0` y
+`state: holding_final_waypoint` hasta cancelar o desactivar.
+Si se cancela despues de completar el path, el resultado conserva `success: true`; una
+cancelacion anterior devuelve `success: false`.
+
+Con `hold_after_reaching: false`, `FollowPath` termina con exito inmediatamente despues
+de alcanzar el ultimo waypoint.
 
 ### FollowPath mandando el path en el goal
 

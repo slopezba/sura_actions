@@ -137,6 +137,7 @@ private:
   double gain_z_{1.0};
   double gain_yaw_{1.0};
   double misalignment_slowdown_yaw_{1.0};
+  bool hold_after_reaching_{true};
 };
 
 }  // namespace sura_actions

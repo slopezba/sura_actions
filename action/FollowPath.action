@@ -18,3 +18,4 @@ float64 current_yaw
 int32 current_waypoint_index
 float64 distance_to_target
 float64 progress
+string state

@@ -9,6 +9,12 @@ sura_control_manager_node:
     modes.manual.activate:
       - body_force
       - depth_hold
+    modes.manual.deactivate:
+      - body_velocity
+      - position_hold
+      - stabilize
+      - mpc_4dof
+      - thruster_test_controller
 
     modes.follow_path.activate:
       - body_force

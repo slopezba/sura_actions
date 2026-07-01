@@ -149,6 +149,8 @@ GoToPoseLifecycleActionServer::CallbackReturn GoToPoseLifecycleActionServer::on_
   gain_yaw_ = getOrDeclareParameter<double>(*this, "gains.yaw", 1.0);
   misalignment_slowdown_yaw_ =
     getOrDeclareParameter<double>(*this, "misalignment_slowdown_yaw", 1.0);
+  hold_after_reaching_ =
+    getOrDeclareParameter<bool>(*this, "hold_after_reaching", false);
 
   set_control_mode_client_ = this->create_client<SetControlMode>(set_control_mode_service_);
   target_pose_pub_ = this->create_publisher<PoseStampedMsg>(
@@ -280,7 +282,7 @@ rclcpp_action::CancelResponse GoToPoseLifecycleActionServer::handleCancel(
   const std::shared_ptr<GoalHandleGoToPose>)
 {
   requestStop();
-  RCLCPP_INFO(get_logger(), "Canceling GoToPose goal");
+  RCLCPP_INFO(get_logger(), "GoToPose cancellation requested");
   return rclcpp_action::CancelResponse::ACCEPT;
 }
 
@@ -364,7 +366,8 @@ void GoToPoseLifecycleActionServer::execute(
     if (goal_handle->is_canceling() || stop_requested_) {
       publishZeroVelocity();
       result->success = false;
-      result->message = "GoToPose goal canceled";
+      result->message = "GoToPose goal canceled before reaching the target";
+      RCLCPP_INFO(get_logger(), "GoToPose canceled before reaching the target");
       goal_handle->canceled(result);
       finish();
       return;
@@ -456,6 +459,21 @@ void GoToPoseLifecycleActionServer::execute(
     publishDepthSetpoint(target_position.z);
     publishPlannedPose();
 
+    const bool target_within_tolerance =
+      distance_to_goal < goal.position_tolerance &&
+      std::abs(depth_error) < depth_tolerance &&
+      std::abs(yaw_error) < goal.yaw_tolerance;
+
+    if (target_within_tolerance) {
+      publishZeroVelocity();
+      result->success = true;
+      result->message = "GoToPose target reached";
+      RCLCPP_INFO(get_logger(), "GoToPose target reached successfully");
+      goal_handle->succeed(result);
+      finish();
+      return;
+    }
+
     feedback->current_x = current_position.x;
     feedback->current_y = current_position.y;
     feedback->current_z = current_position.z;
@@ -468,19 +486,6 @@ void GoToPoseLifecycleActionServer::execute(
     feedback->commanded_yaw_rate = yaw_rate;
     feedback->state = final_approach_active ? "final_approach" : "moving";
     goal_handle->publish_feedback(feedback);
-
-    if (
-      distance_to_goal < goal.position_tolerance &&
-      std::abs(depth_error) < depth_tolerance &&
-      std::abs(yaw_error) < goal.yaw_tolerance)
-    {
-      publishZeroVelocity();
-      result->success = true;
-      result->message = "GoToPose target reached";
-      goal_handle->succeed(result);
-      finish();
-      return;
-    }
 
     if (elapsed > timeout_duration) {
       publishZeroVelocity();
