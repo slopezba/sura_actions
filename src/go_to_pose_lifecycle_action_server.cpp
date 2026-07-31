@@ -118,8 +118,17 @@ GoToPoseLifecycleActionServer::CallbackReturn GoToPoseLifecycleActionServer::on_
     *this, "set_control_mode_service", namespacedTopic("control_manager/set_mode"));
   navigator_topic_ = getOrDeclareParameter<std::string>(
     *this, "navigator_topic", namespacedTopic("navigator/navigation"));
-  body_velocity_command_topic_ = getOrDeclareParameter<std::string>(
-    *this, "body_velocity_command_topic", namespacedTopic("controller/body_velocity/setpoint"));
+  arbitrator_velocity_topic_ = getOrDeclareParameter<std::string>(
+    *this, "arbitrator_velocity_topic", namespacedTopic("controller/arbitrator/velocity"));
+  clear_controller_intents_service_ = getOrDeclareParameter<std::string>(
+    *this,
+    "clear_controller_intents_service",
+    namespacedTopic("controller/arbitrator/clear_controller_intents"));
+  body_velocity_controller_name_ = getOrDeclareParameter<std::string>(
+    *this, "body_velocity_controller", "body_velocity");
+  requester_ = getOrDeclareParameter<std::string>(*this, "requester", "go_to_pose");
+  priority_ = static_cast<int>(
+    std::clamp<int64_t>(getOrDeclareParameter<int>(*this, "priority", 60), 1, 100));
   depth_setpoint_topic_ = getOrDeclareParameter<std::string>(
     *this, "depth_setpoint_topic", namespacedTopic("controller/depth_hold/set_point"));
   target_pose_topic_ = getOrDeclareParameter<std::string>(
@@ -153,10 +162,12 @@ GoToPoseLifecycleActionServer::CallbackReturn GoToPoseLifecycleActionServer::on_
     getOrDeclareParameter<bool>(*this, "hold_after_reaching", false);
 
   set_control_mode_client_ = this->create_client<SetControlMode>(set_control_mode_service_);
+  clear_intents_client_ =
+    this->create_client<sura_msgs::srv::ClearControllerIntents>(clear_controller_intents_service_);
   target_pose_pub_ = this->create_publisher<PoseStampedMsg>(
     target_pose_topic_, rclcpp::SystemDefaultsQoS());
-  body_velocity_pub_ = this->create_publisher<TwistMsg>(
-    body_velocity_command_topic_, rclcpp::SystemDefaultsQoS());
+  body_velocity_pub_ = this->create_publisher<SuraVelocityCommandMsg>(
+    arbitrator_velocity_topic_, rclcpp::SystemDefaultsQoS());
   depth_setpoint_pub_ = this->create_publisher<DepthSetPointMsg>(
     depth_setpoint_topic_, rclcpp::SystemDefaultsQoS());
   navigator_sub_ = this->create_subscription<NavigatorMsg>(
@@ -307,6 +318,7 @@ void GoToPoseLifecycleActionServer::execute(
   const std::shared_ptr<GoalHandleGoToPose> goal_handle)
 {
   const auto finish = [this]() {
+      clearBodyVelocityIntents();
       finishExecution();
       scheduleDeactivateAfterGoal();
     };
@@ -773,6 +785,7 @@ void GoToPoseLifecycleActionServer::cleanupResources()
   target_pose_pub_.reset();
   body_velocity_pub_.reset();
   depth_setpoint_pub_.reset();
+  clear_intents_client_.reset();
   set_control_mode_client_.reset();
   interactive_marker_server_.reset();
   {
@@ -859,7 +872,55 @@ void GoToPoseLifecycleActionServer::publishBodyVelocity(
   msg.linear.y = lateral_speed;
   msg.linear.z = vertical_speed;
   msg.angular.z = yaw_rate;
-  body_velocity_pub_->publish(msg);
+  SuraVelocityCommandMsg intent;
+  intent.header.stamp = now();
+  intent.requester = requester_;
+  intent.controller = body_velocity_controller_name_;
+  intent.priority = static_cast<uint8_t>(priority_);
+  intent.velocity = msg;
+  body_velocity_pub_->publish(intent);
+}
+
+void GoToPoseLifecycleActionServer::clearBodyVelocityIntents()
+{
+  clearControllerIntent(body_velocity_controller_name_);
+}
+
+void GoToPoseLifecycleActionServer::clearControllerIntent(
+  const std::string & controller_name)
+{
+  if (controller_name.empty() || !clear_intents_client_) {
+    return;
+  }
+  if (!clear_intents_client_->service_is_ready()) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(),
+      *get_clock(),
+      2000,
+      "Clear controller intents service '%s' is not available.",
+      clear_controller_intents_service_.c_str());
+    return;
+  }
+  auto request = std::make_shared<sura_msgs::srv::ClearControllerIntents::Request>();
+  request->controller = controller_name;
+  auto future = clear_intents_client_->async_send_request(request);
+  const auto status = future.wait_for(std::chrono::milliseconds(500));
+  if (status != std::future_status::ready) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Clear controller intents request timed out for '%s'",
+      controller_name.c_str());
+    return;
+  }
+
+  const auto response = future.get();
+  if (!response->success) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Failed to clear controller intents for '%s': %s",
+      controller_name.c_str(),
+      response->message.c_str());
+  }
 }
 
 void GoToPoseLifecycleActionServer::publishDepthSetpoint(double target_depth)

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,6 +37,11 @@ SuraControlManager::SuraControlManager(const rclcpp::NodeOptions & options)
     rclcpp::CallbackGroupType::MutuallyExclusive);
   switch_client_callback_group_ = this->create_callback_group(
     rclcpp::CallbackGroupType::Reentrant);
+
+  list_controllers_client_ = this->create_client<ListControllers>(
+    controller_manager_ + "/list_controllers",
+    rmw_qos_profile_services_default,
+    switch_client_callback_group_);
 
   switch_controller_client_ = this->create_client<SwitchController>(
     controller_manager_ + "/" + switch_service_name_,
@@ -100,14 +106,27 @@ bool SuraControlManager::switchToMode(
   std::string & error_message)
 {
   const double timeout = sanitizePositive(switch_timeout_, 5.0);
+
+  std::map<std::string, std::string> controller_states;
+  if (!getControllerStates(controller_states, error_message)) {
+    return false;
+  }
+
+  const ModeConfig filtered_mode_config = filterModeConfig(mode_config, controller_states);
+  if (filtered_mode_config.activate_controllers.empty() &&
+    filtered_mode_config.deactivate_controllers.empty())
+  {
+    return true;
+  }
+
   if (!switch_controller_client_->wait_for_service(std::chrono::duration<double>(timeout))) {
     error_message = "switch_controller service is not available";
     return false;
   }
 
   auto request = std::make_shared<SwitchController::Request>();
-  request->activate_controllers = mode_config.activate_controllers;
-  request->deactivate_controllers = mode_config.deactivate_controllers;
+  request->activate_controllers = filtered_mode_config.activate_controllers;
+  request->deactivate_controllers = filtered_mode_config.deactivate_controllers;
   request->strictness = strictness_;
   request->activate_asap = true;
   request->timeout = rclcpp::Duration::from_seconds(timeout);
@@ -126,6 +145,62 @@ bool SuraControlManager::switchToMode(
   }
 
   return true;
+}
+
+bool SuraControlManager::getControllerStates(
+  std::map<std::string, std::string> & controller_states,
+  std::string & error_message)
+{
+  const double timeout = sanitizePositive(switch_timeout_, 5.0);
+  if (!list_controllers_client_->wait_for_service(std::chrono::duration<double>(timeout))) {
+    error_message = "list_controllers service is not available";
+    return false;
+  }
+
+  auto request = std::make_shared<ListControllers::Request>();
+  auto future = list_controllers_client_->async_send_request(request);
+  const auto status = future.wait_for(std::chrono::duration<double>(timeout + 1.0));
+  if (status != std::future_status::ready) {
+    error_message = "list_controllers request timed out";
+    return false;
+  }
+
+  const auto response = future.get();
+  controller_states.clear();
+  for (const auto & controller : response->controller) {
+    controller_states[controller.name] = controller.state;
+  }
+
+  return true;
+}
+
+SuraControlManager::ModeConfig SuraControlManager::filterModeConfig(
+  const ModeConfig & mode_config,
+  const std::map<std::string, std::string> & controller_states) const
+{
+  ModeConfig filtered_mode_config{mode_config.name, {}, {}};
+
+  std::copy_if(
+    mode_config.activate_controllers.begin(),
+    mode_config.activate_controllers.end(),
+    std::back_inserter(filtered_mode_config.activate_controllers),
+    [&controller_states](const std::string & controller_name)
+    {
+      const auto state_it = controller_states.find(controller_name);
+      return state_it == controller_states.end() || state_it->second != "active";
+    });
+
+  std::copy_if(
+    mode_config.deactivate_controllers.begin(),
+    mode_config.deactivate_controllers.end(),
+    std::back_inserter(filtered_mode_config.deactivate_controllers),
+    [&controller_states](const std::string & controller_name)
+    {
+      const auto state_it = controller_states.find(controller_name);
+      return state_it != controller_states.end() && state_it->second == "active";
+    });
+
+  return filtered_mode_config;
 }
 
 void SuraControlManager::loadModeConfigs()

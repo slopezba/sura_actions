@@ -42,8 +42,13 @@ SurfaceActionServer::SurfaceActionServer(const rclcpp::NodeOptions & options)
     "set_control_mode_service", namespacedTopic("control_manager/set_mode"));
   navigator_topic_ = this->declare_parameter<std::string>(
     "navigator_topic", namespacedTopic("navigator/navigation"));
-  depth_feedforward_topic_ = this->declare_parameter<std::string>(
-    "depth_feedforward_topic", namespacedTopic("controller/depth_hold/feedforward"));
+  arbitrator_wrench_topic_ = this->declare_parameter<std::string>(
+    "arbitrator_wrench_topic", namespacedTopic("controller/arbitrator/wrench"));
+  depth_hold_controller_name_ = this->declare_parameter<std::string>(
+    "depth_hold_controller", "depth_hold");
+  requester_ = this->declare_parameter<std::string>("requester", "surface");
+  priority_ = static_cast<int>(
+    std::clamp<int64_t>(this->declare_parameter<int>("priority", 70), 1, 100));
   default_depth_tolerance_ = this->declare_parameter<double>("default_depth_tolerance", 0.10);
   default_timeout_ = this->declare_parameter<double>("default_timeout", 30.0);
   navigator_timeout_ = this->declare_parameter<double>("navigator_timeout", 2.0);
@@ -51,8 +56,8 @@ SurfaceActionServer::SurfaceActionServer(const rclcpp::NodeOptions & options)
   setpoint_publish_rate_ = this->declare_parameter<double>("setpoint_publish_rate", 10.0);
 
   set_control_mode_client_ = this->create_client<SetControlMode>(set_control_mode_service_);
-  surface_wrench_pub_ = this->create_publisher<WrenchMsg>(
-    depth_feedforward_topic_, rclcpp::SystemDefaultsQoS());
+  surface_wrench_pub_ = this->create_publisher<SuraWrenchCommandMsg>(
+    arbitrator_wrench_topic_, rclcpp::SystemDefaultsQoS());
   navigator_sub_ = this->create_subscription<NavigatorMsg>(
     navigator_topic_,
     rclcpp::SystemDefaultsQoS(),
@@ -73,7 +78,7 @@ SurfaceActionServer::SurfaceActionServer(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(get_logger(), "Surface action server ready on '%s'", action_name_.c_str());
   RCLCPP_INFO(get_logger(), "Using set mode service '%s'", set_control_mode_service_.c_str());
   RCLCPP_INFO(get_logger(), "Using navigator topic '%s'", navigator_topic_.c_str());
-  RCLCPP_INFO(get_logger(), "Using depth feedforward topic '%s'", depth_feedforward_topic_.c_str());
+  RCLCPP_INFO(get_logger(), "Using arbitrator wrench topic '%s'", arbitrator_wrench_topic_.c_str());
 }
 
 rclcpp_action::GoalResponse SurfaceActionServer::handleGoal(
@@ -269,8 +274,12 @@ void SurfaceActionServer::requestTerminalMode(const std::string & reason)
 
 void SurfaceActionServer::publishSurfaceWrench(double surface_force_z)
 {
-  WrenchMsg msg;
-  msg.force.z = surface_force_z;
+  SuraWrenchCommandMsg msg;
+  msg.header.stamp = now();
+  msg.requester = requester_;
+  msg.controller = depth_hold_controller_name_;
+  msg.priority = static_cast<uint8_t>(priority_);
+  msg.wrench.force.z = surface_force_z;
   surface_wrench_pub_->publish(msg);
 }
 

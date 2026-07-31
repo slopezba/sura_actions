@@ -43,6 +43,9 @@ def generate_launch_description():
         ["'", namespace_prefix, "' + '/controller/controller_manager'"]
     )
     surface_action_name = PythonExpression(["'", namespace_prefix, "' + '/actions/surface'"])
+    go_to_depth_action_name = PythonExpression(
+        ["'", namespace_prefix, "' + '/actions/go_to_depth'"]
+    )
     go_to_pose_action_name = PythonExpression(
         ["'", namespace_prefix, "' + '/actions/go_to_pose'"]
     )
@@ -50,11 +53,14 @@ def generate_launch_description():
         ["'", namespace_prefix, "' + '/actions/follow_path'"]
     )
     navigator_topic = PythonExpression(["'", namespace_prefix, "' + '/navigator/navigation'"])
-    depth_feedforward_topic = PythonExpression(
-        ["'", namespace_prefix, "' + '/controller/depth_hold/feedforward'"]
+    arbitrator_wrench_topic = PythonExpression(
+        ["'", namespace_prefix, "' + '/controller/arbitrator/wrench'"]
     )
-    body_velocity_command_topic = PythonExpression(
-        ["'", namespace_prefix, "' + '/controller/body_velocity/setpoint'"]
+    arbitrator_velocity_topic = PythonExpression(
+        ["'", namespace_prefix, "' + '/controller/arbitrator/velocity'"]
+    )
+    clear_controller_intents_service = PythonExpression(
+        ["'", namespace_prefix, "' + '/controller/arbitrator/clear_controller_intents'"]
     )
     depth_setpoint_topic = PythonExpression(
         ["'", namespace_prefix, "' + '/controller/depth_hold/set_point'"]
@@ -123,7 +129,43 @@ def generate_launch_description():
                         "robot_namespace": robot_namespace,
                         "action_name": surface_action_name,
                         "navigator_topic": navigator_topic,
-                        "depth_feedforward_topic": depth_feedforward_topic,
+                        "arbitrator_wrench_topic": arbitrator_wrench_topic,
+                        "set_control_mode_service": set_control_mode_service,
+                        "default_depth_tolerance": ParameterValue(
+                            default_depth_tolerance,
+                            value_type=float,
+                        ),
+                        "default_timeout": ParameterValue(
+                            default_timeout,
+                            value_type=float,
+                        ),
+                        "navigator_timeout": ParameterValue(
+                            navigator_timeout,
+                            value_type=float,
+                        ),
+                        "mode_request_timeout": ParameterValue(
+                            mode_request_timeout,
+                            value_type=float,
+                        ),
+                        "setpoint_publish_rate": ParameterValue(
+                            setpoint_publish_rate,
+                            value_type=float,
+                        ),
+                    }
+                ],
+            ),
+            LifecycleNode(
+                package="sura_actions",
+                executable="go_to_depth_lifecycle_action_node",
+                name="go_to_depth_lifecycle_action_node",
+                namespace="",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_namespace": robot_namespace,
+                        "action_name": go_to_depth_action_name,
+                        "navigator_topic": navigator_topic,
+                        "depth_setpoint_topic": depth_setpoint_topic,
                         "set_control_mode_service": set_control_mode_service,
                         "default_depth_tolerance": ParameterValue(
                             default_depth_tolerance,
@@ -160,7 +202,8 @@ def generate_launch_description():
                         "robot_namespace": robot_namespace,
                         "action_name": go_to_pose_action_name,
                         "navigator_topic": navigator_topic,
-                        "body_velocity_command_topic": body_velocity_command_topic,
+                        "arbitrator_velocity_topic": arbitrator_velocity_topic,
+                        "clear_controller_intents_service": clear_controller_intents_service,
                         "depth_setpoint_topic": depth_setpoint_topic,
                         "target_pose_topic": go_to_pose_target_pose_topic,
                         "interactive_marker_namespace": go_to_pose_interactive_marker_namespace,
@@ -200,7 +243,8 @@ def generate_launch_description():
                         "robot_namespace": robot_namespace,
                         "action_name": follow_path_action_name,
                         "navigator_topic": navigator_topic,
-                        "body_velocity_command_topic": body_velocity_command_topic,
+                        "arbitrator_velocity_topic": arbitrator_velocity_topic,
+                        "clear_controller_intents_service": clear_controller_intents_service,
                         "depth_setpoint_topic": depth_setpoint_topic,
                         "path_topic": path_manager_path_topic,
                         "markers_topic": path_manager_markers_topic,

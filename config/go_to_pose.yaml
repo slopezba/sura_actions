@@ -9,10 +9,10 @@ go_to_pose_lifecycle_action_node:
       max_yaw_rate: 1.0
       position_tolerance: 0.1
       yaw_tolerance: 0.1
-      slowdown_distance: 0.5
-      timeout: 60.0
+      slowdown_distance: 0.8
+      timeout: 120.0
     gains:
-      x: 0.4
-      y: 0.4
-      z: 1.0
-      yaw: 1.0
+      x: 0.5
+      y: 0.5
+      z: 0.7
+      yaw: 0.8

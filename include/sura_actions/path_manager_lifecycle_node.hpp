@@ -21,6 +21,8 @@
 #include "sura_actions/srv/set_control_mode.hpp"
 #include "sura_msgs/msg/auv_controller_set_point.hpp"
 #include "sura_msgs/msg/navigator.hpp"
+#include "sura_msgs/msg/sura_velocity_command.hpp"
+#include "sura_msgs/srv/clear_controller_intents.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "visualization_msgs/msg/interactive_marker_feedback.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
@@ -91,6 +93,7 @@ public:
   using FollowPath = sura_actions::action::FollowPath;
   using GoalHandleFollowPath = rclcpp_action::ServerGoalHandle<FollowPath>;
   using NavigatorMsg = sura_msgs::msg::Navigator;
+  using SuraVelocityCommandMsg = sura_msgs::msg::SuraVelocityCommand;
   using TwistMsg = geometry_msgs::msg::Twist;
   using DepthSetPointMsg = sura_msgs::msg::AuvControllerSetPoint;
   using SetControlMode = sura_actions::srv::SetControlMode;
@@ -98,9 +101,13 @@ public:
   void configure(
     rclcpp_lifecycle::LifecycleNode * node,
     const std::string & navigator_topic,
-    const std::string & body_velocity_command_topic,
+    const std::string & arbitrator_velocity_topic,
     const std::string & depth_setpoint_topic,
     const std::string & set_control_mode_service,
+    const std::string & clear_controller_intents_service,
+    const std::string & body_velocity_controller_name,
+    const std::string & requester,
+    int priority,
     double default_max_vertical_speed,
     bool default_holonomic,
     double default_goal_tolerance,
@@ -141,12 +148,14 @@ private:
     double yaw_rate);
   void publishDepthSetpoint(double target_depth);
   void publishZeroVelocity();
+  void clearBodyVelocityIntents();
 
   rclcpp_lifecycle::LifecycleNode * node_{nullptr};
   rclcpp::Subscription<NavigatorMsg>::SharedPtr navigator_sub_;
-  rclcpp::Publisher<TwistMsg>::SharedPtr body_velocity_pub_;
+  rclcpp::Publisher<SuraVelocityCommandMsg>::SharedPtr body_velocity_pub_;
   rclcpp::Publisher<DepthSetPointMsg>::SharedPtr depth_setpoint_pub_;
   rclcpp::Client<SetControlMode>::SharedPtr set_control_mode_client_;
+  rclcpp::Client<sura_msgs::srv::ClearControllerIntents>::SharedPtr clear_intents_client_;
 
   mutable std::mutex navigator_mutex_;
   NavigatorMsg::SharedPtr last_navigator_msg_;
@@ -156,6 +165,9 @@ private:
   std::thread execution_thread_;
   std::atomic_bool executing_{false};
   std::atomic_bool stop_requested_{false};
+  std::string body_velocity_controller_name_{"body_velocity"};
+  std::string requester_{"follow_path"};
+  int priority_{55};
 
   double default_max_vertical_speed_{0.3};
   bool default_holonomic_{false};
@@ -229,7 +241,11 @@ private:
   std::string interactive_marker_namespace_;
   std::string action_name_;
   std::string navigator_topic_;
-  std::string body_velocity_command_topic_;
+  std::string arbitrator_velocity_topic_;
+  std::string clear_controller_intents_service_;
+  std::string body_velocity_controller_name_{"body_velocity"};
+  std::string requester_{"follow_path"};
+  int priority_{55};
   std::string depth_setpoint_topic_;
   std::string set_control_mode_service_;
   bool default_holonomic_{false};

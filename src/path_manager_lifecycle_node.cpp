@@ -659,9 +659,13 @@ void PathEditor::rebuildInteractiveMarkersLocked()
 void FollowPathExecutor::configure(
   rclcpp_lifecycle::LifecycleNode * node,
   const std::string & navigator_topic,
-  const std::string & body_velocity_command_topic,
+  const std::string & arbitrator_velocity_topic,
   const std::string & depth_setpoint_topic,
   const std::string & set_control_mode_service,
+  const std::string & clear_controller_intents_service,
+  const std::string & body_velocity_controller_name,
+  const std::string & requester,
+  int priority,
   double default_max_vertical_speed,
   bool default_holonomic,
   double default_goal_tolerance,
@@ -690,6 +694,9 @@ void FollowPathExecutor::configure(
   mode_request_timeout_ = sanitizePositive(mode_request_timeout, 5.0);
   control_loop_rate_ = sanitizePositive(control_loop_rate, 15.0);
   hold_after_reaching_ = hold_after_reaching;
+  body_velocity_controller_name_ = body_velocity_controller_name;
+  requester_ = requester;
+  priority_ = std::clamp(priority, 1, 100);
   gain_x_ = gain_x;
   gain_y_ = gain_y;
   gain_z_ = gain_z;
@@ -709,10 +716,10 @@ void FollowPathExecutor::configure(
 
   auto parameters_interface = node_->get_node_parameters_interface();
   auto topics_interface = node_->get_node_topics_interface();
-  body_velocity_pub_ = rclcpp::create_publisher<TwistMsg>(
+  body_velocity_pub_ = rclcpp::create_publisher<SuraVelocityCommandMsg>(
     parameters_interface,
     topics_interface,
-    body_velocity_command_topic,
+    arbitrator_velocity_topic,
     rclcpp::SystemDefaultsQoS());
   depth_setpoint_pub_ = rclcpp::create_publisher<DepthSetPointMsg>(
     parameters_interface,
@@ -721,6 +728,8 @@ void FollowPathExecutor::configure(
     rclcpp::SystemDefaultsQoS());
 
   set_control_mode_client_ = node_->create_client<SetControlMode>(set_control_mode_service);
+  clear_intents_client_ =
+    node_->create_client<sura_msgs::srv::ClearControllerIntents>(clear_controller_intents_service);
 }
 
 void FollowPathExecutor::cleanup()
@@ -728,10 +737,12 @@ void FollowPathExecutor::cleanup()
   requestStop();
   joinExecutionThread();
   publishZeroVelocity();
+  clearBodyVelocityIntents();
   navigator_sub_.reset();
   body_velocity_pub_.reset();
   depth_setpoint_pub_.reset();
   set_control_mode_client_.reset();
+  clear_intents_client_.reset();
   {
     std::lock_guard<std::mutex> lock(navigator_mutex_);
     last_navigator_msg_.reset();
@@ -763,6 +774,7 @@ void FollowPathExecutor::requestStop()
 {
   stop_requested_ = true;
   publishZeroVelocity();
+  clearBodyVelocityIntents();
 }
 
 void FollowPathExecutor::joinExecutionThread()
@@ -813,7 +825,10 @@ void FollowPathExecutor::execute(
 {
   const auto finish_guard = std::unique_ptr<void, std::function<void(void *)>>(
     reinterpret_cast<void *>(1),
-    [this](void *) { finishExecution(); });
+    [this](void *) {
+      clearBodyVelocityIntents();
+      finishExecution();
+    });
   const auto goal = goal_handle->get_goal();
   auto result = std::make_shared<FollowPath::Result>();
   auto feedback = std::make_shared<FollowPath::Feedback>();
@@ -1031,11 +1046,17 @@ void FollowPathExecutor::publishBodyVelocity(
     return;
   }
 
-  TwistMsg msg;
-  msg.linear.x = forward_speed;
-  msg.linear.y = lateral_speed;
-  msg.linear.z = vertical_speed;
-  msg.angular.z = yaw_rate;
+  TwistMsg velocity;
+  velocity.linear.x = forward_speed;
+  velocity.linear.y = lateral_speed;
+  velocity.linear.z = vertical_speed;
+  velocity.angular.z = yaw_rate;
+  SuraVelocityCommandMsg msg;
+  msg.header.stamp = node_->now();
+  msg.requester = requester_;
+  msg.controller = body_velocity_controller_name_;
+  msg.priority = static_cast<uint8_t>(priority_);
+  msg.velocity = velocity;
   body_velocity_pub_->publish(msg);
 }
 
@@ -1058,6 +1079,16 @@ void FollowPathExecutor::publishDepthSetpoint(double target_depth)
 void FollowPathExecutor::publishZeroVelocity()
 {
   publishBodyVelocity(0.0, 0.0, 0.0, 0.0);
+}
+
+void FollowPathExecutor::clearBodyVelocityIntents()
+{
+  if (!clear_intents_client_ || !clear_intents_client_->service_is_ready()) {
+    return;
+  }
+  auto request = std::make_shared<sura_msgs::srv::ClearControllerIntents::Request>();
+  request->controller = body_velocity_controller_name_;
+  (void)clear_intents_client_->async_send_request(request);
 }
 
 PathManagerLifecycleNode::PathManagerLifecycleNode(const rclcpp::NodeOptions & options)
@@ -1090,9 +1121,18 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
   navigator_topic_ = getOrDeclareParameter<std::string>(
     *this,
     "navigator_topic", namespacedTopic("navigator/navigation"));
-  body_velocity_command_topic_ = getOrDeclareParameter<std::string>(
+  arbitrator_velocity_topic_ = getOrDeclareParameter<std::string>(
     *this,
-    "body_velocity_command_topic", namespacedTopic("controller/body_velocity/setpoint"));
+    "arbitrator_velocity_topic", namespacedTopic("controller/arbitrator/velocity"));
+  clear_controller_intents_service_ = getOrDeclareParameter<std::string>(
+    *this,
+    "clear_controller_intents_service",
+    namespacedTopic("controller/arbitrator/clear_controller_intents"));
+  body_velocity_controller_name_ = getOrDeclareParameter<std::string>(
+    *this, "body_velocity_controller", "body_velocity");
+  requester_ = getOrDeclareParameter<std::string>(*this, "requester", "follow_path");
+  priority_ = static_cast<int>(
+    std::clamp<int64_t>(getOrDeclareParameter<int>(*this, "priority", 55), 1, 100));
   depth_setpoint_topic_ = getOrDeclareParameter<std::string>(
     *this,
     "depth_setpoint_topic", namespacedTopic("controller/depth_hold/set_point"));
@@ -1133,9 +1173,13 @@ PathManagerLifecycleNode::CallbackReturn PathManagerLifecycleNode::on_configure(
   executor_.configure(
     this,
     navigator_topic_,
-    body_velocity_command_topic_,
+    arbitrator_velocity_topic_,
     depth_setpoint_topic_,
     set_control_mode_service_,
+    clear_controller_intents_service_,
+    body_velocity_controller_name_,
+    requester_,
+    priority_,
     default_max_vertical_speed,
     default_holonomic_,
     default_goal_tolerance_,

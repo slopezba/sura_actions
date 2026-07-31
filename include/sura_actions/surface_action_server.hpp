@@ -11,6 +11,7 @@
 #include "sura_actions/action/surface.hpp"
 #include "sura_actions/srv/set_control_mode.hpp"
 #include "sura_msgs/msg/navigator.hpp"
+#include "sura_msgs/msg/sura_wrench_command.hpp"
 
 namespace sura_actions
 {
@@ -22,6 +23,7 @@ public:
   using GoalHandleSurface = rclcpp_action::ServerGoalHandle<Surface>;
   using SetControlMode = sura_actions::srv::SetControlMode;
   using NavigatorMsg = sura_msgs::msg::Navigator;
+  using SuraWrenchCommandMsg = sura_msgs::msg::SuraWrenchCommand;
   using WrenchMsg = geometry_msgs::msg::Wrench;
 
   explicit SurfaceActionServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
@@ -45,7 +47,7 @@ private:
 
   rclcpp_action::Server<Surface>::SharedPtr action_server_;
   rclcpp::Client<SetControlMode>::SharedPtr set_control_mode_client_;
-  rclcpp::Publisher<WrenchMsg>::SharedPtr surface_wrench_pub_;
+  rclcpp::Publisher<SuraWrenchCommandMsg>::SharedPtr surface_wrench_pub_;
   rclcpp::Subscription<NavigatorMsg>::SharedPtr navigator_sub_;
 
   mutable std::mutex navigator_mutex_;
@@ -56,7 +58,10 @@ private:
   std::string action_name_;
   std::string set_control_mode_service_;
   std::string navigator_topic_;
-  std::string depth_feedforward_topic_;
+  std::string arbitrator_wrench_topic_;
+  std::string depth_hold_controller_name_{"depth_hold"};
+  std::string requester_{"surface"};
+  int priority_{70};
   double default_depth_tolerance_{0.1};
   double default_timeout_{30.0};
   double navigator_timeout_{2.0};

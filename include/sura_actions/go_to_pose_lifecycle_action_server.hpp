@@ -17,6 +17,8 @@
 #include "sura_actions/srv/set_control_mode.hpp"
 #include "sura_msgs/msg/auv_controller_set_point.hpp"
 #include "sura_msgs/msg/navigator.hpp"
+#include "sura_msgs/msg/sura_velocity_command.hpp"
+#include "sura_msgs/srv/clear_controller_intents.hpp"
 #include "visualization_msgs/msg/interactive_marker_feedback.hpp"
 
 namespace sura_actions
@@ -32,6 +34,7 @@ public:
   using SetControlMode = sura_actions::srv::SetControlMode;
   using NavigatorMsg = sura_msgs::msg::Navigator;
   using PoseStampedMsg = geometry_msgs::msg::PoseStamped;
+  using SuraVelocityCommandMsg = sura_msgs::msg::SuraVelocityCommand;
   using TwistMsg = geometry_msgs::msg::Twist;
   using DepthSetPointMsg = sura_msgs::msg::AuvControllerSetPoint;
   using InteractiveMarkerServer = interactive_markers::InteractiveMarkerServer;
@@ -87,13 +90,16 @@ private:
     double vertical_speed,
     double yaw_rate);
   void publishDepthSetpoint(double target_depth);
+  void clearBodyVelocityIntents();
+  void clearControllerIntent(const std::string & controller_name);
   bool getNavigatorSnapshot(NavigatorMsg & navigator_msg, rclcpp::Time & stamp) const;
   std::string namespacedTopic(const std::string & suffix) const;
 
   rclcpp_action::Server<GoToPose>::SharedPtr action_server_;
   rclcpp::Client<SetControlMode>::SharedPtr set_control_mode_client_;
+  rclcpp::Client<sura_msgs::srv::ClearControllerIntents>::SharedPtr clear_intents_client_;
   rclcpp::Publisher<PoseStampedMsg>::SharedPtr target_pose_pub_;
-  rclcpp::Publisher<TwistMsg>::SharedPtr body_velocity_pub_;
+  rclcpp::Publisher<SuraVelocityCommandMsg>::SharedPtr body_velocity_pub_;
   rclcpp::Publisher<DepthSetPointMsg>::SharedPtr depth_setpoint_pub_;
   rclcpp::Subscription<NavigatorMsg>::SharedPtr navigator_sub_;
   std::unique_ptr<InteractiveMarkerServer> interactive_marker_server_;
@@ -116,7 +122,11 @@ private:
   std::string action_name_;
   std::string set_control_mode_service_;
   std::string navigator_topic_;
-  std::string body_velocity_command_topic_;
+  std::string arbitrator_velocity_topic_;
+  std::string clear_controller_intents_service_;
+  std::string body_velocity_controller_name_{"body_velocity"};
+  std::string requester_{"go_to_pose"};
+  int priority_{60};
   std::string depth_setpoint_topic_;
   std::string target_pose_topic_;
   std::string interactive_marker_namespace_;
