@@ -8,8 +8,8 @@ sura_control_manager_node:
 
     modes.manual.activate:
       - body_force
-      - depth_hold
     modes.manual.deactivate:
+      - depth_hold
       - body_velocity
       - position_hold
       - stabilize

@@ -169,10 +169,6 @@ void SurfaceActionServer::execute(const std::shared_ptr<GoalHandleSurface> goal_
     const double depth_error = has_depth ? target_depth - current_depth :
       std::numeric_limits<double>::quiet_NaN();
 
-    if (has_depth) {
-      publishSurfaceWrench(surface_force_z);
-    }
-
     feedback->current_depth = current_depth;
     feedback->depth_error = depth_error;
     feedback->time_remaining = std::max(
@@ -188,6 +184,10 @@ void SurfaceActionServer::execute(const std::shared_ptr<GoalHandleSurface> goal_
       result->final_depth = current_depth;
       goal_handle->succeed(result);
       return;
+    }
+
+    if (has_depth) {
+      publishSurfaceWrench(surface_force_z);
     }
 
     const auto elapsed = this->now() - start_time;
