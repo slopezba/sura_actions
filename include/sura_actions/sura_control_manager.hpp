@@ -52,6 +52,7 @@ private:
 
   std::map<uint8_t, ModeConfig> modes_;
   std::string robot_namespace_;
+  std::string robot_family_;
   std::string controller_manager_;
   std::string switch_service_name_;
   double switch_timeout_{5.0};

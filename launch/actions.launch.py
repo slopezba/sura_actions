@@ -27,6 +27,7 @@ def generate_launch_description():
     )
 
     robot_namespace = LaunchConfiguration("robot_namespace")
+    robot_family = LaunchConfiguration("robot_family")
     control_modes_file = LaunchConfiguration("control_modes_file")
     go_to_pose_config_file = LaunchConfiguration("go_to_pose_config_file")
     path_manager_config_file = LaunchConfiguration("path_manager_config_file")
@@ -87,6 +88,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_namespace", default_value="sura"),
+            DeclareLaunchArgument("robot_family", default_value=""),
             DeclareLaunchArgument(
                 "control_modes_file",
                 default_value=default_control_modes_file,
@@ -115,6 +117,7 @@ def generate_launch_description():
                     control_modes_file,
                     {
                         "robot_namespace": robot_namespace,
+                        "robot_family": robot_family,
                         "controller_manager": controller_manager,
                     },
                 ],

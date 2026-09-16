@@ -23,6 +23,7 @@ SuraControlManager::SuraControlManager(const rclcpp::NodeOptions & options)
 : Node("sura_control_manager_node", options)
 {
   robot_namespace_ = this->declare_parameter<std::string>("robot_namespace", "sura");
+  robot_family_ = this->declare_parameter<std::string>("robot_family", "");
   controller_manager_ = this->declare_parameter<std::string>(
     "controller_manager", namespacedTopic("controller/controller_manager"));
   switch_service_name_ = this->declare_parameter<std::string>(
@@ -211,10 +212,27 @@ void SuraControlManager::loadModeConfigs()
     {
       const auto activate_param = "modes." + key + ".activate";
       const auto deactivate_param = "modes." + key + ".deactivate";
+      auto activate_controllers_from_parameters =
+        this->declare_parameter<std::vector<std::string>>(activate_param, activate);
+      auto deactivate_controllers_from_parameters =
+        this->declare_parameter<std::vector<std::string>>(deactivate_param, deactivate);
+      if (robot_family_ == "surface") {
+        const auto remove_auv_controllers = [](std::vector<std::string> & controllers) {
+            controllers.erase(
+              std::remove_if(
+                controllers.begin(), controllers.end(),
+                [](const std::string & controller) {
+                  return controller == "depth_hold" || controller == "stabilize";
+                }),
+              controllers.end());
+          };
+        remove_auv_controllers(activate_controllers_from_parameters);
+        remove_auv_controllers(deactivate_controllers_from_parameters);
+      }
       modes_[mode] = ModeConfig{
         modeName(mode),
-        this->declare_parameter<std::vector<std::string>>(activate_param, activate),
-        this->declare_parameter<std::vector<std::string>>(deactivate_param, deactivate)};
+        std::move(activate_controllers_from_parameters),
+        std::move(deactivate_controllers_from_parameters)};
     };
 
   load_mode(
