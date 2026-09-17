@@ -1,0 +1,22 @@
+# Pose in the configured frame_id (world_ned by default); theta is yaw in radians.
+geometry_msgs/Pose2D target_pose
+bool use_planned_pose
+# Zero selects the configured default for limits, tolerances and timeout.
+float64 max_forward_speed
+float64 max_yaw_rate
+float64 position_tolerance
+float64 yaw_tolerance
+float64 slowdown_distance
+float64 timeout
+---
+bool success
+string message
+---
+float64 current_x
+float64 current_y
+float64 current_yaw
+float64 distance_to_goal
+float64 yaw_error
+float64 commanded_forward_speed
+float64 commanded_yaw_rate
+string state

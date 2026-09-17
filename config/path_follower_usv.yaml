@@ -1,0 +1,15 @@
+path_follower_usv_lifecycle_node:
+  ros__parameters:
+    frame_id: world_ned
+    defaults:
+      max_forward_speed: 0.30
+      max_yaw_rate: 0.25
+      goal_tolerance: 1.0
+      yaw_tolerance: 0.5
+      slowdown_distance: 1.2
+      timeout: 500.0
+    navigator_timeout: 2.0
+    mode_request_timeout: 5.0
+    control_loop_rate: 15.0
+    misalignment_slowdown_yaw: 0.70
+    gains.yaw: 0.8

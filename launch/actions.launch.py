@@ -2,10 +2,20 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+
+def validate_family(context):
+    family = LaunchConfiguration("robot_family").perform(context)
+    if family not in ("underwater", "surface"):
+        raise RuntimeError(
+            f"Unsupported robot_family '{family}'; expected underwater or surface"
+        )
+    return []
 
 
 def generate_launch_description():
@@ -28,6 +38,8 @@ def generate_launch_description():
 
     robot_namespace = LaunchConfiguration("robot_namespace")
     robot_family = LaunchConfiguration("robot_family")
+    is_auv = IfCondition(PythonExpression(["'", robot_family, "' == 'underwater'"]))
+    is_usv = IfCondition(PythonExpression(["'", robot_family, "' == 'surface'"]))
     control_modes_file = LaunchConfiguration("control_modes_file")
     go_to_pose_config_file = LaunchConfiguration("go_to_pose_config_file")
     path_manager_config_file = LaunchConfiguration("path_manager_config_file")
@@ -88,7 +100,16 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("robot_namespace", default_value="sura"),
-            DeclareLaunchArgument("robot_family", default_value=""),
+            DeclareLaunchArgument("robot_family", default_value="underwater"),
+            OpaqueFunction(function=validate_family),
+            DeclareLaunchArgument(
+                "go_to_pose_usv_config_file",
+                default_value=os.path.join(package_share, "config", "go_to_pose_usv.yaml"),
+            ),
+            DeclareLaunchArgument(
+                "path_follower_usv_config_file",
+                default_value=os.path.join(package_share, "config", "path_follower_usv.yaml"),
+            ),
             DeclareLaunchArgument(
                 "control_modes_file",
                 default_value=default_control_modes_file,
@@ -125,6 +146,7 @@ def generate_launch_description():
             Node(
                 package="sura_actions",
                 executable="surface_action_node",
+                condition=is_auv,
                 name="surface_action_node",
                 output="screen",
                 parameters=[
@@ -160,6 +182,7 @@ def generate_launch_description():
             LifecycleNode(
                 package="sura_actions",
                 executable="go_to_depth_lifecycle_action_node",
+                condition=is_auv,
                 name="go_to_depth_lifecycle_action_node",
                 namespace="",
                 output="screen",
@@ -196,6 +219,7 @@ def generate_launch_description():
             LifecycleNode(
                 package="sura_actions",
                 executable="go_to_pose_lifecycle_action_node",
+                condition=is_auv,
                 name="go_to_pose_lifecycle_action_node",
                 namespace="",
                 output="screen",
@@ -237,6 +261,7 @@ def generate_launch_description():
             LifecycleNode(
                 package="sura_actions",
                 executable="path_manager_lifecycle_node",
+                condition=is_auv,
                 name="path_manager_lifecycle_node",
                 namespace="",
                 output="screen",
@@ -256,5 +281,32 @@ def generate_launch_description():
                     },
                 ],
             ),
+        ] + [
+            LifecycleNode(
+                package="sura_actions",
+                executable=executable,
+                name=executable,
+                namespace="",
+                condition=is_usv,
+                output="screen",
+                parameters=[
+                    LaunchConfiguration(config_argument),
+                    {
+                        "robot_namespace": robot_namespace,
+                        "navigator_topic": navigator_topic,
+                        "arbitrator_velocity_topic": arbitrator_velocity_topic,
+                        "clear_controller_intents_service": clear_controller_intents_service,
+                        "set_control_mode_service": set_control_mode_service,
+                        "navigator_timeout": ParameterValue(navigator_timeout, value_type=float),
+                        "mode_request_timeout": ParameterValue(
+                            mode_request_timeout, value_type=float),
+                        "control_loop_rate": ParameterValue(control_loop_rate, value_type=float),
+                    },
+                ],
+            )
+            for executable, config_argument in (
+                ("go_to_pose_usv_lifecycle_action_node", "go_to_pose_usv_config_file"),
+                ("path_follower_usv_lifecycle_node", "path_follower_usv_config_file"),
+            )
         ]
     )

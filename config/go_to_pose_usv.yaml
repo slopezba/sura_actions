@@ -1,0 +1,15 @@
+go_to_pose_usv_lifecycle_action_node:
+  ros__parameters:
+    frame_id: world_ned
+    defaults:
+      max_forward_speed: 0.20
+      max_yaw_rate: 0.25
+      position_tolerance: 0.30
+      yaw_tolerance: 0.12
+      slowdown_distance: 1.2
+      timeout: 120.0
+    navigator_timeout: 2.0
+    mode_request_timeout: 5.0
+    control_loop_rate: 15.0
+    misalignment_slowdown_yaw: 0.70
+    gains.yaw: 0.8

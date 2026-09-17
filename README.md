@@ -1,393 +1,319 @@
 # sura_actions
 
-Paquete ROS 2 con acciones y servicios para comportamientos autonomos de SURA/CIRTESUB: salir a superficie, ir a una pose, planear un path con waypoints y ejecutar un path.
+Servidores ROS 2 para comportamientos autónomos AUV y USV. El launch selecciona
+la implementación según `robot_family`; `sura_control_manager_node` se ejecuta
+para ambas familias.
 
-Los ejemplos usan el namespace `cirtesub`. Si lanzas con otro namespace, cambia `/cirtesub/...` por el que corresponda.
+| `robot_family` | Servidores |
+| --- | --- |
+| `underwater` | Surface, GoToDepth, GoToPose AUV y FollowPath AUV |
+| `surface` | GoToPose USV y FollowPath USV |
 
-## Lanzar el paquete
-
-Desde una terminal:
+Los ejemplos usan `cirtesub` para el AUV y `blueboat` para el USV. Ejecuta
+siempre esto en cada terminal nueva:
 
 ```bash
-cd /home/cirtesu/cirtesub_ws
+cd ~/sura_blueboat_ws
+source /opt/ros/humble/setup.bash
 source install/setup.bash
-ros2 launch sura_actions actions.launch.py robot_namespace:=cirtesub
 ```
 
-Nodos principales:
+## Lanzamiento
 
-```text
-sura_control_manager_node
-surface_action_node
-go_to_pose_lifecycle_action_node
-path_manager_lifecycle_node
+El bring-up obtiene la familia del atributo `family` del xacro:
+
+```bash
+ros2 launch sura_bringup sura_bringup.launch.py robot_namespace:=blueboat
 ```
 
-Los nodos lifecycle no quedan activos al lanzar. Primero hay que configurarlos.
+Para lanzar solamente las acciones:
 
-## Lifecycle
+```bash
+# USV
+ros2 launch sura_actions actions.launch.py robot_namespace:=blueboat robot_family:=surface
 
-Ver nodos lifecycle:
+# AUV
+ros2 launch sura_actions actions.launch.py robot_namespace:=cirtesub robot_family:=underwater
+```
+
+Los servidores lifecycle arrancan en `unconfigured`. Consulta su estado con:
 
 ```bash
 ros2 lifecycle nodes
-```
-
-Ver estado:
-
-```bash
+ros2 lifecycle get /go_to_pose_usv_lifecycle_action_node
+ros2 lifecycle get /path_follower_usv_lifecycle_node
 ros2 lifecycle get /go_to_pose_lifecycle_action_node
 ros2 lifecycle get /path_manager_lifecycle_node
 ```
 
-Configurar un nodo lifecycle. Esto lo deja en `inactive`:
+`configure` crea las acciones, servicios y markers y deja el nodo en
+`inactive`. La edición se realiza en `inactive`; los goals se aceptan en
+`active`. Para volver a editar utiliza `deactivate`.
+
+## USV: GoToPose
+
+Configurar y activar:
+
+```bash
+ros2 lifecycle set /go_to_pose_usv_lifecycle_action_node configure
+ros2 lifecycle set /go_to_pose_usv_lifecycle_action_node activate
+```
+
+Enviar una pose XY/yaw explícita (`theta` está en radianes):
+
+```bash
+ros2 action send_goal /blueboat/actions/go_to_pose \
+  sura_actions/action/GoToPoseUsv \
+  "{target_pose: {x: 5.0, y: 2.0, theta: 1.57}, use_planned_pose: false}" \
+  --feedback
+```
+
+Para planificar con RViz, configura el nodo y déjalo en `inactive`. Usa
+`Fixed Frame: world_ned` y añade:
+
+- `Pose`: `/blueboat/actions/go_to_pose/target_pose`
+- `InteractiveMarkers`: `/blueboat/actions/go_to_pose/interactive_marker/update`
+
+Mueve `go_to_pose_goal`, activa el nodo y ejecuta la pose planificada:
+
+```bash
+ros2 lifecycle set /go_to_pose_usv_lifecycle_action_node activate
+ros2 action send_goal /blueboat/actions/go_to_pose \
+  sura_actions/action/GoToPoseUsv "{use_planned_pose: true}" --feedback
+```
+
+Los controles X/Y del marker giran con su yaw. El USV solo ordena
+`linear.x >= 0` y `angular.z`; no usa movimiento lateral, Z, roll ni pitch.
+Los campos numéricos a cero toman los valores de `config/go_to_pose_usv.yaml`.
+
+## USV: crear, guardar, cargar y ejecutar un path
+
+Configura el editor y déjalo en `inactive`:
+
+```bash
+ros2 lifecycle set /path_follower_usv_lifecycle_node configure
+```
+
+Si ya estaba activo:
+
+```bash
+ros2 lifecycle set /path_follower_usv_lifecycle_node deactivate
+```
+
+Añadir waypoints:
+
+```bash
+ros2 service call /blueboat/path_manager/add_waypoint \
+  sura_actions/srv/AddWaypointUsv "{x: 2.0, y: 0.0, yaw: 0.0}"
+
+ros2 service call /blueboat/path_manager/add_waypoint \
+  sura_actions/srv/AddWaypointUsv "{x: 5.0, y: 2.0, yaw: 1.57}"
+```
+
+Eliminar el último waypoint o limpiar el path completo:
+
+```bash
+ros2 service call /blueboat/path_manager/remove_last_waypoint std_srvs/srv/Trigger "{}"
+ros2 service call /blueboat/path_manager/clear_path std_srvs/srv/Trigger "{}"
+```
+
+Guardar el path actual:
+
+```bash
+ros2 service call /blueboat/path_manager/save_path \
+  sura_actions/srv/PathFile \
+  "{path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/usv/path_blueboat_port.xml'}"
+```
+
+Cargar el XML para verlo o editarlo:
+
+```bash
+ros2 service call /blueboat/path_manager/load_path \
+  sura_actions/srv/PathFile \
+  "{path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/usv/path_blueboat_port.xml'}"
+```
+
+En RViz usa:
+
+- `Path`: `/blueboat/path_manager/path`
+- `MarkerArray`: `/blueboat/path_manager/markers`
+- `InteractiveMarkers`: `/blueboat/path_manager/interactive_markers/update`
+
+Los markers solo permiten XY/yaw y sus controles X/Y giran con el yaw de cada
+waypoint. Para ejecutar el XML, activa el servidor e indica siempre
+`path_file`; cargarlo previamente con el servicio no sustituye ese campo:
+
+```bash
+ros2 lifecycle set /path_follower_usv_lifecycle_node activate
+
+ros2 action send_goal /blueboat/actions/follow_path \
+  sura_actions/action/FollowPathUsv \
+  "{use_saved_path: true, path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/usv/path_blueboat_port.xml'}" \
+  --feedback
+```
+
+También puede enviarse un path directamente:
+
+```bash
+ros2 action send_goal /blueboat/actions/follow_path \
+  sura_actions/action/FollowPathUsv \
+  "{path: [{x: 2.0, y: 0.0, theta: 0.0}, {x: 5.0, y: 2.0, theta: 1.57}], use_saved_path: false}" \
+  --feedback
+```
+
+El yaw de los waypoints intermedios se ignora. En el último waypoint el robot
+alcanza XY y después alinea el yaw final. Los valores a cero usan
+`config/path_follower_usv.yaml`.
+
+## AUV: GoToPose
+
+Configurar y activar:
 
 ```bash
 ros2 lifecycle set /go_to_pose_lifecycle_action_node configure
-ros2 lifecycle set /path_manager_lifecycle_node configure
+ros2 lifecycle set /go_to_pose_lifecycle_action_node activate
 ```
 
-Activar un nodo lifecycle. En `active` acepta goals:
+Enviar una pose explícita:
+
+```bash
+ros2 action send_goal /cirtesub/actions/go_to_pose \
+  sura_actions/action/GoToPose \
+  "{target_pose: {header: {frame_id: 'world_ned'}, pose: {position: {x: 2.0, y: 1.0, z: -1.5}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}, target_yaw: 1.57, holonomic: true}" \
+  --feedback
+```
+
+Para usar el marker, configura el nodo y déjalo en `inactive`. En RViz añade:
+
+- `Pose`: `/cirtesub/actions/go_to_pose/target_pose`
+- `InteractiveMarkers`: `/cirtesub/actions/go_to_pose/interactive_marker/update`
+
+Después de moverlo:
 
 ```bash
 ros2 lifecycle set /go_to_pose_lifecycle_action_node activate
-ros2 lifecycle set /path_manager_lifecycle_node activate
+ros2 action send_goal /cirtesub/actions/go_to_pose \
+  sura_actions/action/GoToPose "{}" --feedback
 ```
 
-Volver a modo planificacion/edicion:
+`holonomic: true` permite velocidad lateral; `false` usa navegación no
+holonómica. Los valores omitidos se toman de `config/go_to_pose.yaml`.
+
+## AUV: crear, guardar, cargar y ejecutar un path
+
+Configurar el editor:
 
 ```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node deactivate
-ros2 lifecycle set /path_manager_lifecycle_node deactivate
+ros2 lifecycle set /path_manager_lifecycle_node configure
 ```
 
-Regla de uso:
-
-- `go_to_pose_lifecycle_action_node`: en `inactive` puedes mover el marker de goal; en `active` acepta goals.
-- `path_manager_lifecycle_node`: en `inactive` puedes planear/editar waypoints; en `active` acepta `FollowPath`.
-
-## Servicios
-
-### Cambiar modo de control
-
-Servicio:
-
-```text
-/cirtesub/control_manager/set_mode
-```
-
-Tipo:
-
-```text
-sura_actions/srv/SetControlMode
-```
-
-Modos disponibles:
-
-```text
-MANUAL=0
-FOLLOW_PATH=1
-SURFACE=2
-HOLD_POSITION=3
-EMERGENCY_STOP=4
-BODY_VELOCITY=5
-```
-
-Ejemplos:
+Añadir waypoints XYZ/yaw:
 
 ```bash
-ros2 service call /cirtesub/control_manager/set_mode sura_actions/srv/SetControlMode "{mode: 0, reason: 'manual test'}"
+ros2 service call /cirtesub/path_manager/add_waypoint \
+  sura_actions/srv/AddWaypoint "{x: 0.0, y: 0.0, z: -1.0, yaw: 0.0}"
+
+ros2 service call /cirtesub/path_manager/add_waypoint \
+  sura_actions/srv/AddWaypoint "{x: 3.0, y: 1.0, z: -1.5, yaw: 1.57}"
 ```
 
-```bash
-ros2 service call /cirtesub/control_manager/set_mode sura_actions/srv/SetControlMode "{mode: 5, reason: 'body velocity test'}"
-```
-
-Normalmente no hace falta llamar este servicio a mano para las acciones, porque los action servers lo solicitan internamente.
-
-### Path manager
-
-Estos servicios existen bajo `/cirtesub/path_manager/...`.
-
-Anadir waypoint:
-
-```bash
-ros2 service call /cirtesub/path_manager/add_waypoint sura_actions/srv/AddWaypoint "{x: 0.0, y: 0.0, z: -1.0, yaw: 0.0}"
-```
-
-Borrar ultimo waypoint:
+Eliminar, limpiar, guardar y cargar:
 
 ```bash
 ros2 service call /cirtesub/path_manager/remove_last_waypoint std_srvs/srv/Trigger "{}"
-```
-
-Limpiar path:
-
-```bash
 ros2 service call /cirtesub/path_manager/clear_path std_srvs/srv/Trigger "{}"
+
+ros2 service call /cirtesub/path_manager/save_path \
+  sura_actions/srv/PathFile \
+  "{path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/auv_path.xml'}"
+
+ros2 service call /cirtesub/path_manager/load_path \
+  sura_actions/srv/PathFile \
+  "{path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/auv_path.xml'}"
 ```
 
-Guardar path en XML:
+Estos servicios requieren el nodo `inactive`. En RViz usa:
+
+- `Path`: `/cirtesub/path_manager/path`
+- `MarkerArray`: `/cirtesub/path_manager/markers`
+- `InteractiveMarkers`: `/cirtesub/path_manager/interactive_markers/update`
+
+Ejecutar el fichero guardado:
 
 ```bash
-ros2 service call /cirtesub/path_manager/save_path sura_actions/srv/PathFile "{path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}"
+ros2 lifecycle set /path_manager_lifecycle_node activate
+
+ros2 action send_goal /cirtesub/actions/follow_path \
+  sura_actions/action/FollowPath \
+  "{use_saved_path: true, path_file: '/home/salva/sura_blueboat_ws/src/sura_actions/config/paths/auv_path.xml', holonomic: true}" \
+  --feedback
 ```
 
-Cargar path desde XML:
+Enviar un path directamente:
 
 ```bash
-ros2 service call /cirtesub/path_manager/load_path sura_actions/srv/PathFile "{path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}"
+ros2 action send_goal /cirtesub/actions/follow_path \
+  sura_actions/action/FollowPath \
+  "{use_saved_path: false, holonomic: false, path: {header: {frame_id: 'world_ned'}, poses: [{header: {frame_id: 'world_ned'}, pose: {position: {x: 0.0, y: 0.0, z: -1.0}, orientation: {w: 1.0}}}, {header: {frame_id: 'world_ned'}, pose: {position: {x: 3.0, y: 1.0, z: -1.5}, orientation: {w: 1.0}}}]}}" \
+  --feedback
 ```
 
-Para usar estos servicios de edicion, `path_manager_lifecycle_node` debe estar en `inactive`.
+Los valores omitidos se toman de `config/path_manager.yaml`.
 
-## RViz
+## Otras acciones AUV
 
-### Ver y editar paths
-
-Configura el path manager:
+Surface no es lifecycle:
 
 ```bash
-ros2 lifecycle set /path_manager_lifecycle_node configure
+ros2 action send_goal /cirtesub/actions/surface \
+  sura_actions/action/Surface \
+  "{target_depth: 0.0, depth_tolerance: 0.1, timeout: 30.0, surface_force_z: 0.4}" \
+  --feedback
 ```
 
-En RViz:
-
-- `Fixed Frame`: `world_ned`
-- Add -> `Path`: `/cirtesub/path_manager/path`
-- Add -> `MarkerArray`: `/cirtesub/path_manager/markers`
-- Add -> `InteractiveMarkers`
-  - `Update Topic`: `/cirtesub/path_manager/interactive_markers/update`
-
-### Mover el goal de GoToPose
-
-Configura el nodo:
+GoToDepth sí es lifecycle:
 
 ```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node configure
+ros2 lifecycle set /go_to_depth_lifecycle_action_node configure
+ros2 lifecycle set /go_to_depth_lifecycle_action_node activate
+ros2 action send_goal /cirtesub/actions/go_to_depth \
+  sura_actions/action/GoToDepth \
+  "{target_depth: 2.0, depth_tolerance: 0.1, timeout: 30.0}" \
+  --feedback
 ```
 
-En RViz:
+## Diagnóstico
 
-- Add -> `InteractiveMarkers`
-  - `Update Topic`: `/cirtesub/actions/go_to_pose/interactive_marker/update`
-- Para ver la pose publicada:
-  - Add -> `Pose`: `/cirtesub/actions/go_to_pose/target_pose`
-
-Mueve el marker en X/Y/Z/yaw. Luego activa el nodo y manda un goal sin pose explicita para usar esa pose.
-
-## Actions
-
-Listar actions:
+Comprobar interfaces, servicios y acciones:
 
 ```bash
-ros2 action list
-```
-
-Ver la interfaz de una action:
-
-```bash
+ros2 interface show sura_actions/action/GoToPoseUsv
+ros2 interface show sura_actions/action/FollowPathUsv
 ros2 interface show sura_actions/action/GoToPose
 ros2 interface show sura_actions/action/FollowPath
-ros2 interface show sura_actions/action/Surface
+ros2 interface show sura_actions/srv/PathFile
+ros2 action list -t
+ros2 service list -t | grep path_manager
 ```
 
-### Surface
-
-Action:
-
-```text
-/cirtesub/actions/surface
-```
-
-Mandar goal:
+Si aparece `The passed action/service type is invalid`, vuelve a cargar el
+workspace en esa misma terminal:
 
 ```bash
-ros2 action send_goal /cirtesub/actions/surface sura_actions/action/Surface "{target_depth: 0.0, depth_tolerance: 0.1, timeout: 30.0, surface_force_z: 0.4}" --feedback
+source /opt/ros/humble/setup.bash
+source ~/sura_blueboat_ws/install/setup.bash
 ```
 
-### GoToPose con marker
-
-Primero planea la pose con el marker en `inactive`:
+## Compilación y pruebas
 
 ```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node configure
+cd ~/sura_blueboat_ws
+colcon build --packages-select sura_msgs sura_actions --symlink-install
+source install/setup.bash
+colcon test --packages-select sura_actions
+colcon test-result --verbose
 ```
 
-Mueve el marker en RViz. Luego activa:
-
-```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node activate
-```
-
-Mandar goal usando la pose actual del marker:
-
-```bash
-ros2 action send_goal /cirtesub/actions/go_to_pose sura_actions/action/GoToPose "{}" --feedback
-```
-
-Los limites y tolerancias que no mandes se toman de `config/go_to_pose.yaml`, en la seccion `defaults`.
-
-Para sobrescribir solo un campo:
-
-```bash
-ros2 action send_goal /cirtesub/actions/go_to_pose sura_actions/action/GoToPose "{holonomic: true}" --feedback
-```
-
-Con `holonomic: true` el robot puede usar velocidad lateral. Con `holonomic: false` se comporta como no holonomico.
-
-Con `hold_after_reaching: true` (valor por defecto en `config/go_to_pose.yaml`), al entrar
-en tolerancia la accion publica el estado `holding_target` y mantiene activo el mismo lazo
-de correccion de `GoToPose`. No activa `position_hold`. La accion termina y el nodo vuelve
-a `inactive` cuando se cancela o se desactiva. Si se cancela despues de haber alcanzado la
-pose, el resultado conserva `success: true` y comunica que la pose se mantuvo correctamente
-hasta la cancelacion. Una cancelacion anterior a alcanzar la pose devuelve `success: false`.
-
-Si quieres el comportamiento anterior, configura `hold_after_reaching: false`: la accion
-termina con exito al entrar en tolerancia, publica velocidad cero y vuelve automaticamente
-a `inactive`.
-
-### GoToPose con pose explicita
-
-```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node activate
-```
-
-```bash
-ros2 action send_goal /cirtesub/actions/go_to_pose sura_actions/action/GoToPose "{
-  target_pose: {
-    header: {frame_id: 'world_ned'},
-    pose: {
-      position: {x: 1.0, y: 0.0, z: -1.0},
-      orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-    }
-  },
-  target_yaw: 0.0,
-  holonomic: true,
-  max_forward_speed: 0.3,
-  max_vertical_speed: 0.3,
-  max_yaw_rate: 0.5,
-  position_tolerance: 0.2,
-  yaw_tolerance: 0.2,
-  slowdown_distance: 0.5,
-  timeout: 60.0
-}" --feedback
-```
-
-### FollowPath desde XML
-
-El path manager debe estar activo para aceptar goals:
-
-```bash
-ros2 lifecycle set /path_manager_lifecycle_node activate
-```
-
-Ejecutar un path guardado:
-
-```bash
-ros2 action send_goal /cirtesub/actions/follow_path sura_actions/action/FollowPath "{use_saved_path: true, path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}" --feedback
-```
-
-Los limites y tolerancias que no mandes se toman de `config/path_manager.yaml`, en la seccion `defaults`.
-
-Para sobrescribir solo un campo:
-
-```bash
-ros2 action send_goal /cirtesub/actions/follow_path sura_actions/action/FollowPath "{use_saved_path: true, path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml', holonomic: true}" --feedback
-```
-
-Con `hold_after_reaching: true` en `config/path_manager.yaml`, al completar el ultimo
-waypoint la accion mantiene esa pose usando el mismo control de `FollowPath`, sin activar
-`position_hold`. El feedback permanece con `progress: 1.0` y
-`state: holding_final_waypoint` hasta cancelar o desactivar.
-Si se cancela despues de completar el path, el resultado conserva `success: true`; una
-cancelacion anterior devuelve `success: false`.
-
-Con `hold_after_reaching: false`, `FollowPath` termina con exito inmediatamente despues
-de alcanzar el ultimo waypoint.
-
-### FollowPath mandando el path en el goal
-
-```bash
-ros2 lifecycle set /path_manager_lifecycle_node activate
-```
-
-```bash
-ros2 action send_goal /cirtesub/actions/follow_path sura_actions/action/FollowPath "{
-  use_saved_path: false,
-  holonomic: false,
-  goal_tolerance: 0.2,
-  yaw_tolerance: 0.2,
-  max_forward_speed: 0.3,
-  max_yaw_rate: 0.5,
-  timeout: 120.0,
-  path: {
-    header: {frame_id: 'world_ned'},
-    poses: [
-      {
-        header: {frame_id: 'world_ned'},
-        pose: {
-          position: {x: 0.0, y: 0.0, z: -1.0},
-          orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-        }
-      },
-      {
-        header: {frame_id: 'world_ned'},
-        pose: {
-          position: {x: 2.0, y: 0.0, z: -1.0},
-          orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-        }
-      }
-    ]
-  }
-}" --feedback
-```
-
-## Topics utiles
-
-```text
-/cirtesub/navigator/navigation
-/cirtesub/controller/body_velocity/setpoint
-/cirtesub/controller/depth_hold/set_point
-/cirtesub/controller/depth_hold/feedforward
-/cirtesub/actions/go_to_pose/target_pose
-/cirtesub/path_manager/path
-/cirtesub/path_manager/markers
-```
-
-## Resumen rapido
-
-Planear pose con marker:
-
-```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node configure
-```
-
-Ejecutar esa pose:
-
-```bash
-ros2 lifecycle set /go_to_pose_lifecycle_action_node activate
-ros2 action send_goal /cirtesub/actions/go_to_pose sura_actions/action/GoToPose "{}" --feedback
-```
-
-Planear path:
-
-```bash
-ros2 lifecycle set /path_manager_lifecycle_node configure
-ros2 service call /cirtesub/path_manager/add_waypoint sura_actions/srv/AddWaypoint "{x: 0.0, y: 0.0, z: -1.0, yaw: 0.0}"
-ros2 service call /cirtesub/path_manager/add_waypoint sura_actions/srv/AddWaypoint "{x: 2.0, y: 0.0, z: -1.0, yaw: 0.0}"
-```
-
-Cargar path desde XML en modo configurado/inactive:
-
-```bash
-ros2 service call /cirtesub/path_manager/load_path sura_actions/srv/PathFile "{path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}"
-```
-
-Guardar y ejecutar path:
-
-```bash
-ros2 service call /cirtesub/path_manager/save_path sura_actions/srv/PathFile "{path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}"
-ros2 lifecycle set /path_manager_lifecycle_node activate
-ros2 action send_goal /cirtesub/actions/follow_path sura_actions/action/FollowPath "{use_saved_path: true, path_file: '/home/cirtesu/cirtesub_ws/src/sura_actions/config/paths/netinspection_path.xml'}" --feedback
-```
+La carpeta `test/` forma parte de la suite registrada en CMake: valida guiado
+planar, XML, markers, servidores lifecycle y selección de familia en el launch.
+No debe eliminarse.
