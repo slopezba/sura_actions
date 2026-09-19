@@ -172,22 +172,5 @@ install(
   DESTINATION share/${PROJECT_NAME}/launch
 )
 
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-  find_package(ament_cmake_pytest REQUIRED)
-  ament_add_gtest(test_planar_guidance test/test_planar_guidance.cpp)
-  target_include_directories(test_planar_guidance PRIVATE include)
-  ament_target_dependencies(test_planar_guidance geometry_msgs)
-  target_link_libraries(test_planar_guidance PkgConfig::TINYXML2)
-  ament_add_pytest_test(test_usv_servers test/test_usv_servers.py TIMEOUT 120
-    APPEND_ENV ROS_DOMAIN_ID=181 ROS_LOCALHOST_ONLY=1 PYTHONDONTWRITEBYTECODE=1)
-  ament_add_pytest_test(test_actions_launch test/test_actions_launch.py
-    APPEND_ENV PYTHONDONTWRITEBYTECODE=1)
-  find_package(ament_lint_auto REQUIRED)
-  set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-endif()
-
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

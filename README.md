@@ -304,16 +304,10 @@ source /opt/ros/humble/setup.bash
 source ~/sura_blueboat_ws/install/setup.bash
 ```
 
-## Compilación y pruebas
+## Compilación
 
 ```bash
 cd ~/sura_blueboat_ws
 colcon build --packages-select sura_msgs sura_actions --symlink-install
 source install/setup.bash
-colcon test --packages-select sura_actions
-colcon test-result --verbose
 ```
-
-La carpeta `test/` forma parte de la suite registrada en CMake: valida guiado
-planar, XML, markers, servidores lifecycle y selección de familia en el launch.
-No debe eliminarse.

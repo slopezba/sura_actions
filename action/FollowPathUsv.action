@@ -17,5 +17,23 @@ float64 current_y
 float64 current_yaw
 int32 current_waypoint_index
 float64 distance_to_target
+# Target waypoint currently pursued, in the configured frame.
+float64 target_x
+float64 target_y
+float64 target_yaw
+# Heading used by the guidance law and its signed error relative to current_yaw.
+float64 desired_yaw
+float64 yaw_error
+# Velocity command produced by the guidance law before controller arbitration.
+float64 commanded_forward_speed
+float64 commanded_yaw_rate
+# Signed lateral error (positive: left of the current segment) and projected
+# longitudinal distance from that segment's start, both in metres.
+float64 cross_track_error
+float64 along_track_progress
+# Seconds since goal acceptance and since the most recent navigator sample.
+# navigation_age is -1.0 when no navigator sample has been received.
+float64 elapsed_time
+float64 navigation_age
 float64 progress
 string state

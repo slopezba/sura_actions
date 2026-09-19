@@ -19,4 +19,17 @@ float64 distance_to_goal
 float64 yaw_error
 float64 commanded_forward_speed
 float64 commanded_yaw_rate
+# Goal pose in the configured frame and heading selected by the guidance law.
+float64 target_x
+float64 target_y
+float64 target_yaw
+float64 desired_yaw
+# Signed lateral error (positive: left of the start-to-goal segment) and
+# projected longitudinal distance from the goal-start pose, both in metres.
+float64 cross_track_error
+float64 along_track_progress
+# Seconds since goal acceptance and since the most recent navigator sample.
+# navigation_age is -1.0 when no navigator sample has been received.
+float64 elapsed_time
+float64 navigation_age
 string state

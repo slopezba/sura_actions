@@ -56,10 +56,36 @@ struct GuidanceOutput
 {
   geometry_msgs::msg::Twist velocity{};
   double distance{0.0};
+  double desired_yaw{0.0};
   double yaw_error{0.0};
   bool aligning{false};
   bool reached{false};
 };
+
+struct SegmentProgress
+{
+  double cross_track_error{0.0};
+  double along_track_progress{0.0};
+};
+
+// Positive cross-track error means that current lies to the left of the
+// directed segment from start to target.  Along-track progress is intentionally
+// not clamped so that overshoot is observable in action feedback.
+inline SegmentProgress segmentProgress(
+  const Pose2D & start, const Pose2D & target, const Pose2D & current)
+{
+  const double dx = target.x - start.x;
+  const double dy = target.y - start.y;
+  const double length = std::hypot(dx, dy);
+  if (length < 1.e-6) {
+    return {};
+  }
+  const double relative_x = current.x - start.x;
+  const double relative_y = current.y - start.y;
+  return {
+    (dx * relative_y - dy * relative_x) / length,
+    (dx * relative_x + dy * relative_y) / length};
+}
 
 // A pure planar controller: distance and heading govern forward motion;
 // final orientation is handled at rest once XY is within tolerance.
@@ -72,8 +98,8 @@ inline GuidanceOutput guide(
   const double dy = target.y - current.y;
   out.distance = std::hypot(dx, dy);
   out.aligning = out.distance <= limits.position_tolerance;
-  const double desired_yaw = out.aligning ? target.theta : std::atan2(dy, dx);
-  out.yaw_error = normalizeAngle(desired_yaw - current.theta);
+  out.desired_yaw = out.aligning ? target.theta : std::atan2(dy, dx);
+  out.yaw_error = normalizeAngle(out.desired_yaw - current.theta);
   out.reached = out.aligning &&
     (!enforce_final_yaw || std::abs(out.yaw_error) <= limits.yaw_tolerance);
   if (out.reached) {

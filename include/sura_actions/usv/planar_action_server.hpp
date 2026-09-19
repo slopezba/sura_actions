@@ -254,6 +254,8 @@ private:
     }
     waypoint_ = 0;
     started_ = now();
+    segment_start_ = current_;
+    segment_start_initialized_ = navigation_received_ && navigation_valid_;
     mode_requested_ = false;
     mode_ready_ = false;
     editor_.setPoints(execution_.points);
@@ -303,6 +305,10 @@ private:
       feedback(GuidanceOutput{}, "waiting_for_navigation");
       return;
     }
+    if (!segment_start_initialized_) {
+      segment_start_ = current_;
+      segment_start_initialized_ = true;
+    }
     auto output = guide(
       current_, execution_.points[waypoint_], execution_.limits,
       waypoint_ + 1 == execution_.points.size());
@@ -326,6 +332,18 @@ private:
     msg->current_x = current_.x;
     msg->current_y = current_.y;
     msg->current_yaw = current_.theta;
+    const auto & target = execution_.points[waypoint_];
+    const Pose2D & segment_start =
+      (single || waypoint_ == 0) ? segment_start_ : execution_.points[waypoint_ - 1];
+    const auto segment_progress = segmentProgress(segment_start, target, current_);
+    msg->target_x = target.x;
+    msg->target_y = target.y;
+    msg->target_yaw = target.theta;
+    msg->desired_yaw = output.desired_yaw;
+    msg->cross_track_error = segment_progress.cross_track_error;
+    msg->along_track_progress = segment_progress.along_track_progress;
+    msg->elapsed_time = (now() - started_).seconds();
+    msg->navigation_age = navigation_received_ ? (now() - navigation_stamp_).seconds() : -1.0;
     msg->state = state;
     if constexpr (single) {
       msg->distance_to_goal = output.distance;
@@ -335,6 +353,9 @@ private:
     } else {
       msg->current_waypoint_index = static_cast<int32_t>(waypoint_);
       msg->distance_to_target = output.distance;
+      msg->yaw_error = output.yaw_error;
+      msg->commanded_forward_speed = output.velocity.linear.x;
+      msg->commanded_yaw_rate = output.velocity.angular.z;
       msg->progress = output.reached ? 1.0 :
         static_cast<double>(waypoint_) / static_cast<double>(execution_.points.size());
     }
@@ -479,7 +500,9 @@ private:
   GuidanceLimits defaults_;
   double default_timeout_{120.0}, navigator_timeout_{2.0}, mode_timeout_{5.0};
   Pose2D current_;
+  Pose2D segment_start_;
   bool navigation_received_{false}, navigation_valid_{false};
+  bool segment_start_initialized_{false};
   bool mode_requested_{false}, mode_ready_{false};
   int64_t mode_request_id_{0};
   size_t waypoint_{0};
